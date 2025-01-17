@@ -1,12 +1,10 @@
-mod file_management;
-mod utils;
-use crate::file_management::block_id::BlockId;
-use crate::file_management::file_manager::FileManager;
-use crate::file_management::page::Page;
-use crate::utils::logging::init_logging;
+use hanfried_db::file_management::block_id::BlockId;
+use hanfried_db::file_management::file_manager::FileManager;
+use hanfried_db::file_management::page::Page;
+use hanfried_db::utils;
 
 fn main() {
-    init_logging();
+    utils::logging::init_logging();
 
     let block_size = 4096;
     let mut file_manager = FileManager::new("/tmp/test".to_string(), block_size).unwrap();
