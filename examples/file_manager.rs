@@ -26,7 +26,7 @@ fn main() {
     let s = page1.get_string(pos_string);
     let i = page1.get_i32(pos_int);
     println!("{page1:?} {s:?} {i:?}");
-    file_manager.write(&block, page1).unwrap();
+    file_manager.write(&block, &page1).unwrap();
 
     let mut page2 = Page::new(block_size);
     file_manager.read(&block, &mut page2).unwrap();

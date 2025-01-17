@@ -10,6 +10,12 @@ impl Page {
         }
     }
 
+    pub fn from_vec(buffer: Vec<u8>) -> Self {
+        Page {
+            byte_buffer: buffer,
+        }
+    }
+
     pub fn get_i32(&self, offset: usize) -> i32 {
         i32::from_le_bytes(self.byte_buffer[offset..offset + 4].try_into().unwrap())
     }
@@ -37,8 +43,8 @@ impl Page {
         self.set_bytes(offset, value.as_bytes());
     }
 
-    pub fn max_length(&self, strlen: usize) -> usize {
-        4 + strlen
+    pub fn max_length(&self, s: &str) -> usize {
+        4 + s.len()
     }
 
     pub fn get_contents(&self) -> &[u8] {
