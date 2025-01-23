@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct LogManager<'a> {
-    file_manager: Rc<RefCell<FileManager>>,
+    file_manager: Rc<RefCell<FileManager<'a>>>,
     log_file: &'a str,
     log_page: Page,
     current_block: BlockId<'a>,
@@ -16,11 +16,11 @@ pub struct LogManager<'a> {
     log_sequence_number_last_saved: usize,
 }
 
-impl LogManager<'_> {
+impl<'a> LogManager<'a> {
     pub fn new(
-        file_manager: Rc<RefCell<FileManager>>,
-        log_file: &str,
-    ) -> Result<LogManager, std::io::Error> {
+        file_manager: Rc<RefCell<FileManager<'a>>>,
+        log_file: &'a str,
+    ) -> Result<LogManager<'a>, std::io::Error> {
         debug!(
             "Create new log manager, file_manager={:?}, log_file={:?}",
             file_manager, log_file
@@ -49,9 +49,9 @@ impl LogManager<'_> {
         Ok(log_manager)
     }
 
-    fn append_new_block<'a>(
+    fn append_new_block(
         log_file: &'a str,
-        fm: &mut FileManager,
+        fm: &mut FileManager<'a>,
         log_page: &mut Page,
     ) -> Result<BlockId<'a>, std::io::Error> {
         let block_id = fm.append(log_file)?;
@@ -99,7 +99,7 @@ impl LogManager<'_> {
         Ok(self.log_sequence_number_latest)
     }
 
-    pub fn iter(&self) -> Result<LogManagerIter, std::io::Error> {
+    pub fn iter(&self) -> Result<LogManagerIter<'a>, std::io::Error> {
         let mut fm = self.file_manager.borrow_mut();
         let mut page = Page::new(fm.block_size);
         fm.read(&self.current_block, &mut page)?;
@@ -116,7 +116,7 @@ impl LogManager<'_> {
 }
 
 pub struct LogManagerIter<'a> {
-    file_manager: Rc<RefCell<FileManager>>,
+    file_manager: Rc<RefCell<FileManager<'a>>>,
     block: BlockId<'a>,
     // page: Rc<RefCell<Page>>,
     page: Page,

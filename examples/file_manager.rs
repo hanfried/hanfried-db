@@ -7,7 +7,7 @@ fn main() {
     utils::logging::init_logging();
 
     let block_size = 4096;
-    let mut file_manager = FileManager::new("/tmp/test".to_string(), block_size).unwrap();
+    let mut file_manager = FileManager::new("/tmp/test", block_size).unwrap();
     println!("{file_manager:?}");
 
     let block = BlockId {
@@ -20,7 +20,7 @@ fn main() {
     let pos_string: usize = 42;
     let s = "abcdefhgh";
     page1.set_string(pos_string, s);
-    let pos_int = pos_string + page1.max_length(s.len());
+    let pos_int = pos_string + page1.max_length(s);
     page1.set_i32(pos_int, 12345);
 
     let s = page1.get_string(pos_string);

@@ -1,13 +1,9 @@
-mod file_management;
-mod utils;
-
-use crate::file_management::page::Page;
-use hanfried_db::file_management::file_manager::FileManager;
+use hanfried_db::db_management_system::hfdb::HanfriedDb;
+use hanfried_db::file_management::page::Page;
 use hanfried_db::memory_management::log_manager::LogManager;
 use hanfried_db::utils::logging::init_logging;
 use log::info;
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::ops::DerefMut;
 
 fn create_log_record(s: &str, n: i32) -> Vec<u8> {
     let n_pos = s.len() + 4;
@@ -41,51 +37,26 @@ fn print_log_records(log_manager: &LogManager, msg: &str) {
 fn main() {
     init_logging();
 
+    let db_directory = "/data/hanfried-db-test";
     let block_size = 400;
-    let file_manager = Rc::new(RefCell::new(
-        FileManager::new("/tmp/test".to_string(), block_size).unwrap(),
-    ));
-    println!("{file_manager:?}");
+    let log_file = "hfdb.log";
 
-    let mut log_manager = LogManager::new(file_manager.clone(), "hfdb.log").unwrap();
-    println!("{log_manager:?}");
+    let hanfried_db = HanfriedDb::new(db_directory, block_size, log_file).unwrap();
+    println!("{hanfried_db:?}");
 
-    create_records(&mut log_manager, 1, 35);
-    println!("{log_manager:?}");
+    // let file_manager = hanfried_db.file_manager;
+    let mut lm_binding = hanfried_db.log_manager.borrow_mut();
+    let lm = lm_binding.deref_mut();
 
-    print_log_records(&log_manager, "The log file now has these records: ");
-    create_records(&mut log_manager, 36, 70);
+    create_records(lm, 1, 35);
+    println!("{lm:?}");
 
-    log_manager.flush(65).unwrap();
+    print_log_records(lm, "The log file now has these records: ");
+    create_records(lm, 36, 70);
+
+    lm.flush(65).unwrap();
     print_log_records(
-        &log_manager,
+        lm,
         "The log file has now these records after flushing to 65.",
     );
-
-    // let block = BlockId {
-    //     filename: "testfile",
-    //     block_number: 2,
-    // };
-    // println!("{block:?}");
-    //
-    // let mut page1 = Page::new(block_size);
-    // let pos_string: usize = 42;
-    // let s = "abcdefhgh";
-    // page1.set_string(pos_string, s);
-    // let pos_int = pos_string + page1.max_length(s.len());
-    // page1.set_i32(pos_int, 12345);
-    //
-    // let s = page1.get_string(pos_string);
-    // let i = page1.get_i32(pos_int);
-    // println!("{page1:?} {s:?} {i:?}");
-    // file_manager.write(&block, &page1).unwrap();
-    //
-    // let mut page2 = Page::new(block_size);
-    // file_manager.read(&block, &mut page2).unwrap();
-    // let s = page2.get_string(pos_string);
-    // let i = page2.get_i32(pos_int);
-    // println!("{page2:?} {s:?} {i:?}");
-    //
-    // let appended_block: BlockId = file_manager.append("testfile").unwrap();
-    // println!("appended_block: {appended_block:?}");
 }

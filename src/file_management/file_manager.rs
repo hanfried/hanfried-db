@@ -7,18 +7,19 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 
-#[allow(dead_code)]
 #[derive(Debug)]
-pub struct FileManager {
-    db_directory: String,
+pub struct FileManager<'a> {
+    db_directory: &'a str,
     pub block_size: usize,
     open_files: HashMap<String, File>,
 }
 
-impl FileManager {
-    #[allow(dead_code)]
-    pub fn new(db_directory: String, block_size: usize) -> Result<Self, std::io::Error> {
-        let db_root: &Path = Path::new(db_directory.as_str());
+impl<'a> FileManager<'a> {
+    pub fn new(
+        db_directory: &'a str,
+        block_size: usize,
+    ) -> Result<FileManager<'a>, std::io::Error> {
+        let db_root: &Path = Path::new(db_directory);
         if !db_root.exists() {
             info!("Create db root: {:?}", db_root);
             fs::create_dir(db_root)?;
@@ -43,7 +44,6 @@ impl FileManager {
         })
     }
 
-    #[allow(dead_code)]
     pub fn get_file(&mut self, filename: &str) -> Result<&File, std::io::Error> {
         if !self.open_files.contains_key(filename) {
             let f = OpenOptions::new()
@@ -51,14 +51,13 @@ impl FileManager {
                 .write(true)
                 .create(true)
                 .truncate(true)
-                .open(Path::new(self.db_directory.as_str()).join(filename))?;
+                .open(Path::new(self.db_directory).join(filename))?;
             self.open_files.insert(filename.to_string(), f);
         }
         Ok(self.open_files.get(filename).unwrap())
     }
 
     // TODO: Synchronize
-    #[allow(dead_code)]
     pub fn read(&mut self, block: &BlockId, page: &mut Page) -> Result<(), std::io::Error> {
         let block_size = self.block_size;
         let seek_from = std::io::SeekFrom::Start((block.block_number * block_size) as u64);
@@ -71,7 +70,6 @@ impl FileManager {
     }
 
     // TODO: Synchronize
-    #[allow(dead_code)]
     pub fn write(&mut self, block: &BlockId, page: &Page) -> Result<(), std::io::Error> {
         let seek_from = std::io::SeekFrom::Start((block.block_number * self.block_size) as u64);
         let mut file = self.get_file(block.filename)?;
@@ -80,7 +78,6 @@ impl FileManager {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn block_length(&mut self, filename: &str) -> Result<usize, std::io::Error> {
         let mut file = self.get_file(filename)?;
         let eof_offset = file.seek(std::io::SeekFrom::End(0))?;
@@ -88,8 +85,7 @@ impl FileManager {
     }
 
     // TODO: Synchronize
-    #[allow(dead_code)]
-    pub fn append<'a>(&mut self, filename: &'a str) -> Result<BlockId<'a>, std::io::Error> {
+    pub fn append(&mut self, filename: &'a str) -> Result<BlockId<'a>, std::io::Error> {
         let block = BlockId::new(filename, self.block_length(filename)?);
         let seek_from = std::io::SeekFrom::Start((block.block_number * self.block_size) as u64);
         let mut file = self.get_file(filename)?;
