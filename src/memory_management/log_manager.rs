@@ -3,8 +3,28 @@ use crate::file_management::file_manager::FileManager;
 use crate::file_management::page::Page;
 use log::debug;
 use std::cell::RefCell;
+use std::fmt::Display;
 use std::ops::DerefMut;
 use std::rc::Rc;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
+pub struct LogSequenceNumber(usize);
+
+impl LogSequenceNumber {
+    pub fn from(nr: u64) -> Self {
+        LogSequenceNumber(nr as usize)
+    }
+
+    fn increment(mut self) {
+        self.0 += 1;
+    }
+}
+
+impl Display for LogSequenceNumber {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 #[derive(Debug)]
 pub struct LogManager<'a> {
@@ -12,8 +32,8 @@ pub struct LogManager<'a> {
     log_file: &'a str,
     log_page: Page,
     current_block: BlockId<'a>,
-    log_sequence_number_latest: usize,
-    log_sequence_number_last_saved: usize,
+    log_sequence_number_latest: LogSequenceNumber,
+    log_sequence_number_last_saved: LogSequenceNumber,
 }
 
 impl<'a> LogManager<'a> {
@@ -42,8 +62,8 @@ impl<'a> LogManager<'a> {
             log_file,
             log_page,
             current_block,
-            log_sequence_number_latest: 0,
-            log_sequence_number_last_saved: 0,
+            log_sequence_number_latest: LogSequenceNumber(0),
+            log_sequence_number_last_saved: LogSequenceNumber(0),
         };
         debug!("log_manager={:?}", log_manager);
         Ok(log_manager)
@@ -59,12 +79,12 @@ impl<'a> LogManager<'a> {
         fm.write(&block_id, log_page)?;
         debug!(
             "Append new block_id={:?}, log_file={:?}, log_page={:?}",
-            block_id, log_file, log_page
+            &block_id, log_file, log_page
         );
         Ok(block_id)
     }
 
-    pub fn flush(&mut self, log_sequence_number: usize) -> Result<(), std::io::Error> {
+    pub fn flush(&mut self, log_sequence_number: LogSequenceNumber) -> Result<(), std::io::Error> {
         if log_sequence_number >= self.log_sequence_number_last_saved {
             self._flush()?;
         }
@@ -79,7 +99,7 @@ impl<'a> LogManager<'a> {
         Ok(())
     }
 
-    pub fn append(&mut self, log_record: &[u8]) -> Result<usize, std::io::Error> {
+    pub fn append(&mut self, log_record: &[u8]) -> Result<LogSequenceNumber, std::io::Error> {
         let mut boundary = self.log_page.get_i32(0);
         let record_size = log_record.len();
         let bytes_needed = record_size + 4;
@@ -95,7 +115,7 @@ impl<'a> LogManager<'a> {
         let record_pos = boundary - bytes_needed as i32;
         self.log_page.set_bytes(record_pos as usize, log_record);
         self.log_page.set_i32(0, record_pos);
-        self.log_sequence_number_latest += 1;
+        self.log_sequence_number_latest.increment();
         Ok(self.log_sequence_number_latest)
     }
 
@@ -107,7 +127,7 @@ impl<'a> LogManager<'a> {
 
         Ok(LogManagerIter {
             file_manager: self.file_manager.clone(),
-            block: self.current_block.clone(),
+            block: self.current_block,
             page,
             pos_current: boundary as usize,
             boundary: boundary as usize,

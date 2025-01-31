@@ -1,6 +1,6 @@
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BlockId<'a> {
-    pub filename: &'a str,
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct BlockId<'filenames> {
+    pub filename: &'filenames str,
     pub block_number: usize,
 }
 

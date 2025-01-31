@@ -1,6 +1,6 @@
 use hanfried_db::db_management_system::hfdb::HanfriedDb;
 use hanfried_db::file_management::page::Page;
-use hanfried_db::memory_management::log_manager::LogManager;
+use hanfried_db::memory_management::log_manager::{LogManager, LogSequenceNumber};
 use hanfried_db::utils::logging::init_logging;
 use log::info;
 use std::ops::DerefMut;
@@ -54,7 +54,7 @@ fn main() {
     print_log_records(lm, "The log file now has these records: ");
     create_records(lm, 36, 70);
 
-    lm.flush(65).unwrap();
+    lm.flush(LogSequenceNumber::from(65)).unwrap();
     print_log_records(
         lm,
         "The log file has now these records after flushing to 65.",
