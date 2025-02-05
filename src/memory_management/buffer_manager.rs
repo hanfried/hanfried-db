@@ -73,6 +73,7 @@ impl<'managers, 'blocks> BufferManager<'managers, 'blocks> {
         &mut self,
         block: BlockId<'blocks>,
     ) -> Result<MutexGuard<Buffer<'managers, 'blocks>>, BufferManagerError> {
+        debug!("Called Buffermanager pin: {:?}", block);
         loop {
             let buffer_guard = self.try_to_pin(block);
             match buffer_guard {
@@ -114,6 +115,7 @@ impl<'managers, 'blocks> BufferManager<'managers, 'blocks> {
     ) -> Option<MutexGuard<Buffer<'managers, 'blocks>>> {
         // Todo: Looping through whole list with locking seems overkill (map datastructure or something like that)
         // and not sure whether data might be changeable after finding and unlocking it again
+        debug!("Find existing buffer for block {:?}", block);
         self.pool
             .iter()
             .find(|b| b.lock().unwrap().block() == Some(block))
@@ -121,6 +123,7 @@ impl<'managers, 'blocks> BufferManager<'managers, 'blocks> {
     }
 
     fn choose_unpinned_buffer(&self) -> Option<MutexGuard<Buffer<'managers, 'blocks>>> {
+        debug!("Choose an unpinned buffer");
         // Todo: Looping through whole list with locking seems overkill
         self.pool
             .iter()
@@ -132,9 +135,14 @@ impl<'managers, 'blocks> BufferManager<'managers, 'blocks> {
         &self,
         block: BlockId<'blocks>,
     ) -> Result<MutexGuard<Buffer<'managers, 'blocks>>, BufferManagerError> {
+        debug!("BufferManager: Trying to pin block {:?}", block);
         let buffer_guard = self
             .find_existing_buffer(block)
             .or_else(|| self.choose_unpinned_buffer());
+        debug!(
+            "BufferManager trying to pin: buffer_guard: {:?}",
+            buffer_guard
+        );
         if buffer_guard.is_none() {
             return Err(NoCapacity);
         }

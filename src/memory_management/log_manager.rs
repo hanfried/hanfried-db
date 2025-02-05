@@ -65,7 +65,7 @@ impl<'a> LogManager<'a> {
             log_sequence_number_latest: LogSequenceNumber(0),
             log_sequence_number_last_saved: LogSequenceNumber(0),
         };
-        debug!("log_manager={:?}", log_manager);
+        debug!("created log_manager={:?}", log_manager);
         Ok(log_manager)
     }
 

@@ -4,6 +4,7 @@ use crate::file_management::page::Page;
 use crate::memory_management::log_manager::{LogManager, LogSequenceNumber};
 use log::debug;
 use std::cell::RefCell;
+use std::fmt::Display;
 use std::num::NonZeroUsize;
 use std::rc::Rc;
 
@@ -25,6 +26,16 @@ pub struct Buffer<'managers, 'blocks> {
     pins_count: usize,
     transaction_number: Option<TransactionNumber>,
     log_sequence_number: Option<LogSequenceNumber>,
+}
+
+impl Display for Buffer<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "Buffer block={:?} pins_count={:?} transaction_number={:?} log_sequence_number={:?}",
+            self.block, self.pins_count, self.transaction_number, self.log_sequence_number
+        )
+    }
 }
 
 impl<'managers, 'blocks> Buffer<'managers, 'blocks> {
@@ -83,17 +94,25 @@ impl<'managers, 'blocks> Buffer<'managers, 'blocks> {
         );
         self.flush()?;
         self.block = Some(block_id);
+        debug!(
+            "Buffer: Assigning to block={:?}, read file_manager={:?} contents={:?}",
+            block_id, self.file_manager, self.contents
+        );
         self.file_manager
             .borrow_mut()
             .read(&block_id, &mut self.contents)?;
+        debug!(
+            "Buffer: Assigning to block={:?}, set pins_count=0",
+            block_id
+        );
         self.pins_count = 0;
         Ok(())
     }
 
     // TODO: maybe not public
     pub fn flush(&mut self) -> Result<(), std::io::Error> {
-        debug!("Buffer: Flush with block {:?}", self.block);
         if self.transaction_number.is_some() {
+            debug!("Buffer: Flush {}", self);
             if let Some(lsn) = self.log_sequence_number {
                 self.log_manager.borrow_mut().flush(lsn)?;
             }

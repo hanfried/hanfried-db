@@ -64,7 +64,7 @@ impl<'a> FileManager<'a> {
         let mut file = self.get_file(block.filename)?;
         file.seek(seek_from)?;
         let mut buf: Vec<u8> = vec![0; block_size];
-        file.read_exact(buf.as_mut_slice())?;
+        let _bytes_read = file.read(&mut buf);
         page.set_contents(buf.as_slice());
         Ok(())
     }
