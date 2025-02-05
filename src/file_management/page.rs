@@ -5,10 +5,8 @@ pub struct Page {
 
 impl Page {
     pub fn new(block_size: usize) -> Self {
-        let mut buf: Vec<u8> = Vec::with_capacity(block_size);
-        (0..block_size).for_each(|_| buf.push(0x00));
         Self {
-            byte_buffer: buf, // vec![0; block_size],
+            byte_buffer: vec![0; block_size],
         }
     }
 
