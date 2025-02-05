@@ -1,17 +1,19 @@
 use crate::file_management::block_id::BlockId;
 use crate::file_management::page::Page;
 use log::info;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct FileManager<'a> {
     db_directory: &'a str,
     pub block_size: usize,
-    open_files: HashMap<String, File>,
+    open_files: RefCell<HashMap<String, Rc<RefCell<File>>>>,
 }
 
 impl<'a> FileManager<'a> {
@@ -40,28 +42,32 @@ impl<'a> FileManager<'a> {
         Ok(FileManager {
             db_directory,
             block_size,
-            open_files: HashMap::new(),
+            open_files: RefCell::new(HashMap::new()),
         })
     }
 
-    pub fn get_file(&mut self, filename: &str) -> Result<&File, std::io::Error> {
-        if !self.open_files.contains_key(filename) {
+    fn get_file(&self, filename: &str) -> Result<Rc<RefCell<File>>, std::io::Error> {
+        if !self.open_files.borrow().contains_key(filename) {
             let f = OpenOptions::new()
                 .read(true)
                 .write(true)
                 .create(true)
                 .truncate(true)
                 .open(Path::new(self.db_directory).join(filename))?;
-            self.open_files.insert(filename.to_string(), f);
+            self.open_files
+                .borrow_mut()
+                .insert(filename.to_string(), Rc::new(RefCell::new(f)));
         }
-        Ok(self.open_files.get(filename).unwrap())
+        Ok(self.open_files.borrow().get(filename).unwrap().clone())
     }
 
     // TODO: Synchronize
-    pub fn read(&mut self, block: &BlockId, page: &mut Page) -> Result<(), std::io::Error> {
+    pub fn read(&self, block: &BlockId, page: &mut Page) -> Result<(), std::io::Error> {
         let block_size = self.block_size;
         let seek_from = std::io::SeekFrom::Start((block.block_number * block_size) as u64);
-        let mut file = self.get_file(block.filename)?;
+        let file_binding = self.get_file(block.filename).unwrap();
+        let mut file = file_binding.borrow_mut();
+        // let mut file = file_binding.borrow_mut();
         file.seek(seek_from)?;
         let mut buf: Vec<u8> = vec![0; block_size];
         let _bytes_read = file.read(&mut buf);
@@ -70,25 +76,31 @@ impl<'a> FileManager<'a> {
     }
 
     // TODO: Synchronize
-    pub fn write(&mut self, block: &BlockId, page: &Page) -> Result<(), std::io::Error> {
+    pub fn write(&self, block: &BlockId, page: &Page) -> Result<(), std::io::Error> {
         let seek_from = std::io::SeekFrom::Start((block.block_number * self.block_size) as u64);
-        let mut file = self.get_file(block.filename)?;
+        // let mut file = self.get_file(block.filename)?;
+        let file_binding = self.get_file(block.filename).unwrap();
+        let mut file = file_binding.borrow_mut();
         file.seek(seek_from)?;
         file.write_all(page.get_contents())?;
         Ok(())
     }
 
-    pub fn block_length(&mut self, filename: &str) -> Result<usize, std::io::Error> {
-        let mut file = self.get_file(filename)?;
+    pub fn block_length(&self, filename: &str) -> Result<usize, std::io::Error> {
+        // let mut file = self.get_file(filename)?;
+        let file_binding = self.get_file(filename).unwrap();
+        let mut file = file_binding.borrow_mut();
         let eof_offset = file.seek(std::io::SeekFrom::End(0))?;
         Ok(eof_offset as usize / self.block_size)
     }
 
     // TODO: Synchronize
-    pub fn append(&mut self, filename: &'a str) -> Result<BlockId<'a>, std::io::Error> {
+    pub fn append(&self, filename: &'a str) -> Result<BlockId<'a>, std::io::Error> {
         let block = BlockId::new(filename, self.block_length(filename)?);
         let seek_from = std::io::SeekFrom::Start((block.block_number * self.block_size) as u64);
-        let mut file = self.get_file(filename)?;
+        // let mut file = self.get_file(filename)?;
+        let file_binding = self.get_file(filename).unwrap();
+        let mut file = file_binding.borrow_mut();
         file.seek(seek_from)?;
         Ok(block)
     }

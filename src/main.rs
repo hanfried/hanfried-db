@@ -23,9 +23,9 @@ fn main() {
     debug!("buffer_manager {:?}", buffer_manager);
     // debug!("buffer_manager {:?}", bm);
     //
+    let buffer1_rwlock = bm.pin(BlockId::new("testfile", 1));
     {
-        let buffer1_pin = bm.pin(BlockId::new("testfile", 1));
-        let mut buffer1_binding = buffer1_pin.unwrap();
+        let mut buffer1_binding = buffer1_rwlock.unwrap().write().unwrap();
         let page = buffer1_binding.contents_mut();
         let n = page.get_i32(80);
         page.set_i32(80, n + 1);
@@ -34,15 +34,9 @@ fn main() {
         buffer1_binding.unpin();
     }
 
-    {
-        let _buffer2_pin = bm.pin(BlockId::new("testfile", 2));
-    }
-    {
-        let _buffer3_pin = bm.pin(BlockId::new("testfile", 3));
-    }
-    {
-        let _buffer4_pin = bm.pin(BlockId::new("testfile", 4));
-    }
+    let _buffer2_pin = bm.pin(BlockId::new("testfile", 2));
+    let _buffer3_pin = bm.pin(BlockId::new("testfile", 3));
+    let _buffer4_pin = bm.pin(BlockId::new("testfile", 4));
 
     // buffer2_pin.unwrap().unpin();
     // let buffer1_pin = bm.pin(BlockId::new("testfile", 1));

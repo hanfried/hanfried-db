@@ -83,6 +83,10 @@ impl<'managers, 'blocks> Buffer<'managers, 'blocks> {
         self.pins_count > 0
     }
 
+    pub fn is_not_pinned(&self) -> bool {
+        !self.is_pinned()
+    }
+
     pub fn modifying_transaction_number(&self) -> Option<TransactionNumber> {
         self.transaction_number
     }

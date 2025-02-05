@@ -120,7 +120,7 @@ impl<'a> LogManager<'a> {
     }
 
     pub fn iter(&self) -> Result<LogManagerIter<'a>, std::io::Error> {
-        let mut fm = self.file_manager.borrow_mut();
+        let fm = self.file_manager.borrow_mut();
         let mut page = Page::new(fm.block_size);
         fm.read(&self.current_block, &mut page)?;
         let boundary = page.get_i32(0);

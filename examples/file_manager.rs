@@ -7,7 +7,7 @@ fn main() {
     utils::logging::init_logging();
 
     let block_size = 4096;
-    let mut file_manager = FileManager::new("/tmp/test", block_size).unwrap();
+    let file_manager = FileManager::new("/tmp/test", block_size).unwrap();
     println!("{file_manager:?}");
 
     let block = BlockId {
