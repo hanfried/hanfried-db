@@ -46,27 +46,30 @@ impl<'a> FileManager<'a> {
     }
 
     fn get_file(&self, filename: &str) -> Result<Arc<Mutex<File>>, std::io::Error> {
-        if !self.open_files.read().unwrap().contains_key(filename) {
-            let mut open_files_write_lock = self.open_files.write().unwrap();
-            if !open_files_write_lock.contains_key(filename) {
-                let f = OpenOptions::new()
-                    .read(true)
-                    .write(true)
-                    .create(true)
-                    .truncate(true)
-                    .open(Path::new(self.db_directory).join(filename))?;
-                println!("Opened file: {:?}", f);
-                open_files_write_lock.insert(String::from(filename), Arc::new(Mutex::new(f)));
+        {
+            let open_file_read_lock = self.open_files.read().unwrap();
+            let file_option = open_file_read_lock.get(filename);
+
+            if let Some(file) = file_option {
+                return Ok(file.clone());
             }
-            // println!("Content of open_files: {:?} previous_file={:?}", self.open_files.read().unwrap(), previous_file);
         }
-        Ok(self
-            .open_files
-            .read()
-            .unwrap()
-            .get(filename)
-            .unwrap()
-            .clone())
+
+        let mut open_files_write_lock = self.open_files.write().unwrap();
+        let file_option = open_files_write_lock.get(filename);
+        if let Some(file) = file_option {
+            return Ok(file.clone());
+        }
+        let f = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(Path::new(self.db_directory).join(filename))?;
+        println!("Opened file: {:?}", f);
+        let file = Arc::new(Mutex::new(f));
+        open_files_write_lock.insert(String::from(filename), file.clone());
+        Ok(file)
     }
 
     pub fn open_files_count(&self) -> usize {
