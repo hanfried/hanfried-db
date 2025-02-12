@@ -12,7 +12,3 @@ impl BlockId<'_> {
         }
     }
 }
-
-// impl <'a> BlockId<'a> {
-//
-// }

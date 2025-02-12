@@ -72,7 +72,6 @@ impl<'managers, 'blocks> BufferManager<'managers, 'blocks> {
     pub fn pin(
         &self,
         block: BlockId<'blocks>,
-        // ) -> Result<MutexGuard<Buffer<'managers, 'blocks>>, BufferManagerError> {
     ) -> Result<&RwLock<Buffer<'managers, 'blocks>>, BufferManagerError> {
         debug!("Called Buffermanager pin: {:?}", block);
         loop {
