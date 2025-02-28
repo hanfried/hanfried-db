@@ -2,6 +2,7 @@ use crate::file_management::file_manager::FileManager;
 use crate::memory_management::buffer_manager::BufferManager;
 use crate::memory_management::log_manager::LogManager;
 use std::cell::RefCell;
+use std::num::NonZeroUsize;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -21,8 +22,13 @@ impl<'managers> HanfriedDb<'managers, '_> {
         block_size: usize,
         log_file: &'managers str,
         pool_size: usize,
+        max_open_files: usize,
     ) -> Result<Self, std::io::Error> {
-        let fm = Rc::new(RefCell::new(FileManager::new(db_directory, block_size)?));
+        let fm = Rc::new(RefCell::new(FileManager::new(
+            db_directory,
+            block_size,
+            NonZeroUsize::new(max_open_files).unwrap(),
+        )?));
         let lm = Rc::new(RefCell::new(LogManager::new(fm.clone(), log_file)?));
         let bm = Rc::new(RefCell::new(BufferManager::new(
             fm.clone(),

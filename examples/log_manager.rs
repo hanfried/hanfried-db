@@ -41,7 +41,7 @@ fn main() {
     let block_size = 400;
     let log_file = "hfdb.log";
 
-    let hanfried_db = HanfriedDb::new(db_directory, block_size, log_file, 8).unwrap();
+    let hanfried_db = HanfriedDb::new(db_directory, block_size, log_file, 8, 100).unwrap();
     println!("{hanfried_db:?}");
 
     // let file_manager = hanfried_db.file_manager;

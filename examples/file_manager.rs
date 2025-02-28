@@ -2,12 +2,14 @@ use hanfried_db::file_management::block_id::BlockId;
 use hanfried_db::file_management::file_manager::FileManager;
 use hanfried_db::file_management::page::Page;
 use hanfried_db::utils;
+use std::num::NonZeroUsize;
 
 fn main() {
     utils::logging::init_logging();
 
     let block_size = 4096;
-    let file_manager = FileManager::new("/tmp/test", block_size).unwrap();
+    let file_manager =
+        FileManager::new("/tmp/test", block_size, NonZeroUsize::new(100).unwrap()).unwrap();
     println!("{file_manager:?}");
 
     let block = BlockId {

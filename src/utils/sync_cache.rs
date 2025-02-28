@@ -1,19 +1,22 @@
 use std::collections::HashMap;
-use std::fmt::Display;
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::{Arc, RwLock};
 
+#[derive(Debug)]
 struct Item<V> {
     value: V,
     last_access: AtomicU64,
 }
+
+#[derive(Debug)]
 pub struct SyncCache<K, V>
 where
-    K: Eq + Hash,
-    V: Clone + Display,
+    K: Eq + Hash + Debug,
+    V: Clone, // + Display,
 {
     internal_hash_map: Arc<RwLock<HashMap<K, Item<V>>>>,
     max_size: AtomicUsize,
@@ -23,8 +26,8 @@ where
 
 impl<K, V> SyncCache<K, V>
 where
-    K: Eq + Hash,
-    V: Clone + Display,
+    K: Eq + Hash + Debug,
+    V: Clone, // + Display,
 {
     pub fn new(max_size: NonZeroUsize) -> Self {
         let max_size = usize::from(max_size);
@@ -51,40 +54,58 @@ where
         item.value.clone()
     }
 
-    pub fn get_or_insert<F, E>(&mut self, key: K, value_constructor: F) -> Result<V, E>
+    pub fn get_or_insert<F, E>(&self, key: K, value_constructor: F) -> Result<V, E>
     where
         F: Fn() -> Result<V, E>,
     {
         {
             let cache_read_lock = self.internal_hash_map.read().unwrap();
             if let Some(item) = cache_read_lock.get(&key) {
+                println!("Found cached entry for {:?} with read lock", key);
                 return Ok(self.get_value_and_refresh_access(item));
             }
         }
 
         let mut cache_write_lock = self.internal_hash_map.write().unwrap();
         if let Some(item) = cache_write_lock.get(&key) {
+            println!("Found cached entry for {:?} with write lock", key);
             return Ok(self.get_value_and_refresh_access(item));
         }
         while cache_write_lock.len() >= self.max_size.load(Relaxed) {
-            // println!("Shrinken HashMap len={} capacity={} self.access_pivot={}", cache_write_lock.len(), cache_write_lock.capacity(), self.access_pivot.load(Relaxed));
+            println!(
+                "Shrinken HashMap len={} capacity={} self.access_pivot={}",
+                cache_write_lock.len(),
+                cache_write_lock.capacity(),
+                self.access_pivot.load(Relaxed)
+            );
             let mut i = 0;
             let pivot_i = ((cache_write_lock.len() as f64) * 0.38).floor() as i64;
-            let mut min_access_so_far = u64::MAX;
+            let mut min_access_to_pivot = u64::MAX;
             let access_pivot = self.access_pivot.load(Relaxed);
-            // println!("i={}, pivot_i={}, min_access_so_far={}, access_pivot={}", i, pivot_i, min_access_so_far, access_pivot);
-            cache_write_lock.retain(|_, item| {
+            println!(
+                "i={}, pivot_i={}, min_access_to_pivot={}, access_pivot={}",
+                i, pivot_i, min_access_to_pivot, access_pivot
+            );
+            cache_write_lock.retain(|k, item| {
+                if *k == key {
+                    return true
+                }
                 let last_access = item.last_access.load(Relaxed);
-                min_access_so_far = min_access_so_far.min(last_access);
+                if i <= pivot_i {
+                    min_access_to_pivot = min_access_to_pivot.min(last_access);
+                } else if i == pivot_i + 1 {
+                    self.access_pivot.store(min_access_to_pivot, Relaxed);
+                }
                 let last_access_quite_a_time_ago = last_access <= access_pivot
-                    || (last_access <= min_access_so_far && i >= pivot_i);
-                // println!("i={}, v={}, last_access={}, min_access_so_far={}, last_access_quite_a_time_ago={}", i, item.value, last_access, min_access_so_far, last_access_quite_a_time_ago);
+                    || (last_access <= min_access_to_pivot && i >= pivot_i);
+                println!("i={}, k={:?}, last_access={}, min_access_so_far={}, last_access_quite_a_time_ago={}", i, k, last_access, min_access_to_pivot, last_access_quite_a_time_ago);
                 i += 1;
                 !last_access_quite_a_time_ago
             });
-            self.access_pivot.store(access_pivot, Relaxed);
+            // self.access_pivot.store(min_access_so_far, Relaxed);
         }
 
+        // naive implementation, rust is picky about read() -> then write()
         // let key_with_smallest_access = {
         //     cache_write_lock
         //         .iter()
@@ -97,6 +118,7 @@ where
         //     cache_write_lock.remove(key_with_smallest_access);
         // }
         // }
+        println!("Create new value for {:?}", key);
         let value = value_constructor()?;
         cache_write_lock.insert(
             key,
@@ -144,7 +166,7 @@ mod tests {
 
     #[test]
     fn test_cache() {
-        let mut cache: SyncCache<String, String> = SyncCache::new(NonZeroUsize::new(3).unwrap());
+        let cache: SyncCache<String, String> = SyncCache::new(NonZeroUsize::new(3).unwrap());
         assert_eq!(cache.len(), 0);
         assert_eq!(cache.max_size(), 3);
 
