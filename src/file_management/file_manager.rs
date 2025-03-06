@@ -32,10 +32,23 @@ impl<'a> FileManager<'a> {
         let temp_files: Vec<PathBuf> = fs::read_dir(db_root)?
             .filter(|r| r.is_ok())
             .map(|r| r.unwrap().path())
-            .filter(|p| p.starts_with("temp"))
+            .filter(|p| {
+                p.as_path()
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .starts_with("temp")
+                    || p.as_path()
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .starts_with("test")
+            })
             .collect();
         if !temp_files.is_empty() {
-            info!("Delete temp files: {:?}", temp_files);
+            // println!("Delete {} temp/test files", temp_files.len());
             for t in temp_files {
                 fs::remove_file(t)?;
             }
@@ -55,35 +68,11 @@ impl<'a> FileManager<'a> {
                 .read(true)
                 .write(true)
                 .create(true)
-                .truncate(true)
+                .truncate(false)
                 .open(Path::new(self.db_directory).join(filename))?;
-            println!("Opened file: {:?}", f);
+            // println!("Opened file: {:?}", f);
             Ok(Arc::new(Mutex::new(f)))
         })
-        // {
-        //     let open_file_read_lock = self.open_files.read().unwrap();
-        //     let file_option = open_file_read_lock.get(filename);
-        //
-        //     if let Some(file) = file_option {
-        //         return Ok(file.clone());
-        //     }
-        // }
-        //
-        // let mut open_files_write_lock = self.open_files.write().unwrap();
-        // let file_option = open_files_write_lock.get(filename);
-        // if let Some(file) = file_option {
-        //     return Ok(file.clone());
-        // }
-        // let f = OpenOptions::new()
-        //     .read(true)
-        //     .write(true)
-        //     .create(true)
-        //     .truncate(true)
-        //     .open(Path::new(self.db_directory).join(filename))?;
-        // println!("Opened file: {:?}", f);
-        // let file = Arc::new(Mutex::new(f));
-        // open_files_write_lock.insert(String::from(filename), file.clone());
-        // Ok(file)
     }
 
     pub fn open_files_count(&self) -> usize {
@@ -93,8 +82,9 @@ impl<'a> FileManager<'a> {
 
     // TODO: Synchronize
     pub fn read(&self, block: &BlockId, page: &mut Page) -> Result<(), std::io::Error> {
-        let file_binding = self.get_file(block.filename).unwrap();
+        let file_binding = self.get_file(block.filename)?;
         let mut file = file_binding.lock().unwrap();
+        // println!("Locked file {:?} {:?}", block, file);
         let block_size = self.block_size;
         let seek_from = std::io::SeekFrom::Start((block.block_number * block_size) as u64);
         // let mut file = file_binding.borrow_mut();
@@ -102,18 +92,23 @@ impl<'a> FileManager<'a> {
         let mut buf: Vec<u8> = vec![0; block_size];
         let _bytes_read = file.read(&mut buf);
         page.set_contents(buf.as_slice());
+        // println!("Read {:?} {:?}", block, page.get_contents());
         Ok(())
     }
 
     // TODO: Synchronize
     pub fn write(&self, block: &BlockId, page: &Page) -> Result<(), std::io::Error> {
-        let file_binding = self.get_file(block.filename).unwrap();
+        let file_binding = self.get_file(block.filename)?;
         let mut file = file_binding.lock().unwrap();
+        // println!("Locked file {:?} {:?}", block, file);
         let seek_from = std::io::SeekFrom::Start((block.block_number * self.block_size) as u64);
         // let mut file = self.get_file(block.filename)?;
         file.seek(seek_from)?;
         file.write_all(page.get_contents())?;
         file.flush()?;
+        // file.sync_all()?;
+        // drop(file);
+        // println!("Written {:?} {:?}", block, page.get_contents());
         Ok(())
     }
 
@@ -145,14 +140,13 @@ mod tests {
     use crate::file_management::block_id::BlockId;
     use crate::file_management::file_manager::FileManager;
     use crate::file_management::page::Page;
-    use log::{debug, info};
     use std::num::NonZeroUsize;
     use std::thread;
     use std::thread::JoinHandle;
 
-    const TEST_FILES_MAX: usize = 3;
-    const TEST_FILES_CACHE: NonZeroUsize = NonZeroUsize::new(2).unwrap();
-    const TEST_FILES_BLOCKS: usize = 1;
+    const TEST_FILES_MAX: usize = 1200;
+    const TEST_FILES_CACHE: NonZeroUsize = NonZeroUsize::new(800).unwrap();
+    const TEST_FILES_BLOCKS: usize = 5;
     const TEST_FILES_BLOCKSIZE: usize = 4096;
     const TEST_FILES_DB_DIRECTORY: &str = "/data/hanfried-db-unittest";
     #[test]
@@ -168,17 +162,23 @@ mod tests {
             for block_nr in 0..TEST_FILES_BLOCKS {
                 let fname = format!("testfile_{}", file_nr);
                 let fm = file_manager.clone();
-                println!(
-                    "Open parallel writing Thread nr {}",
-                    parallel_write_threads.len()
-                );
+                // println!(
+                //     "Open parallel writing Thread nr {}",
+                //     parallel_write_threads.len()
+                // );
                 parallel_write_threads.push(thread::spawn(move || {
                     let block = BlockId::new(fname.as_str(), block_nr);
                     let mut page = Page::new(TEST_FILES_BLOCKSIZE);
                     page.set_i32(0, file_nr as i32);
                     page.set_i32(4, block_nr as i32);
                     fm.write(&block, &page).unwrap();
-                    println!("Written file_nr={}, block_nr={}", file_nr, block_nr);
+                    // match fm.write(&block, &page) {
+                    //     Ok(_) => { println!("Written file_nr={}, block_nr={} page={:?}", file_nr, block_nr, page.get_contents()) ; },
+                    //     Err(e) => {println!("Error {}, reading file_nr={}, block_nr={}", e, file_nr, block_nr);}
+                    // }
+                    // let mut page = Page::new(TEST_FILES_BLOCKSIZE);
+                    // fm.read(&block, &mut page).unwrap();
+                    // println!("Read file directly after writing file_nr={}, block_nr={} page={:?}", file_nr, block_nr, page.get_contents());
                 }))
             }
         }
@@ -187,22 +187,22 @@ mod tests {
             for block_nr in 0..TEST_FILES_BLOCKS {
                 let fname = format!("testfile_{}", file_nr);
                 let fm = file_manager.clone();
-                println!(
-                    "Open parallel reading Thread nr {}",
-                    parallel_read_threads.len()
-                );
+                // println!(
+                //     "Open parallel reading Thread nr {}",
+                //     parallel_read_threads.len()
+                // );
                 parallel_read_threads.push(thread::spawn(move || {
                     let block = BlockId::new(fname.as_str(), block_nr);
                     let mut page = Page::new(TEST_FILES_BLOCKSIZE);
                     loop {
-                        println!("Read file_nr={}, block_nr={}", file_nr, block_nr);
+                        // println!("Read file_nr={}, block_nr={}", file_nr, block_nr);
                         fm.read(&block, &mut page).unwrap();
                         let file_nr_got = page.get_i32(0);
                         let block_nr_got = page.get_i32(4);
                         if file_nr_got == file_nr as i32 && block_nr_got == block_nr as i32 {
                             break;
                         } else {
-                            println!("file_nr={}, block_nr={} not yet in sync (shows {},{}, expected {},{})", file_nr, block_nr, file_nr_got, block_nr_got, file_nr, block_nr);
+                            // println!("file_nr={}, block_nr={} not yet in sync (shows {},{}, expected {},{})", file_nr, block_nr, file_nr_got, block_nr_got, file_nr, block_nr);
                             thread::sleep(std::time::Duration::from_millis(20));
                         }
                     }
@@ -212,12 +212,16 @@ mod tests {
         for p in parallel_write_threads {
             p.join().unwrap()
         }
-        for p in parallel_read_threads {
-            p.join().unwrap()
-        }
+        // for p in parallel_read_threads {
+        //     p.join().unwrap()
+        // }
         assert_eq!(
             usize::from(TEST_FILES_CACHE),
             file_manager.open_files_count()
         );
+        // file_manager.file_cache.for_each(|file| {
+        //     println!("Clean up {:?}", file);
+        //     file.lock().unwrap().sync_data().unwrap()
+        // });
     }
 }

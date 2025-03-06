@@ -83,6 +83,7 @@ where
             let cache_read_lock = self.internal_hash_map.read().unwrap();
             if let Some(item) = cache_read_lock.get(&key) {
                 if let Some(r) = item.resource.clone() {
+                    // println!("Found resource from read cache {:?} {:?}", &key, r);
                     return Ok(r);
                 }
             }
@@ -90,27 +91,25 @@ where
         let mut cache_write_lock = self.internal_hash_map.write().unwrap();
         if let Some(item) = cache_write_lock.get(&key) {
             if let Some(r) = item.resource.clone() {
+                // println!("Found resource in write cache {:?} {:?}", &key, r);
                 self.refresh_access(item);
                 return Ok(r);
             }
         }
-        println!(
-            "cache_write_lock len={} vs self.resource_capacity={} vs length of internal hash map{}",
-            cache_write_lock.len(),
-            self.resource_capacity,
-            cache_write_lock.len(),
-        );
-
+        // println!("Create resource for key={:?}", key);
         let resource = resource_constructor()?;
         if self.open_resources.load(Relaxed) < self.resource_capacity {
             self.open_resources.fetch_add(1, Relaxed);
         } else {
-            cache_write_lock
+            let item = cache_write_lock
                 .values_mut()
                 .filter(|item| item.resource.is_some())
                 .min_by_key(|item| item.freshness.load(Relaxed))
-                .unwrap()
-                .resource = None
+                .unwrap();
+            // println!("Item's resource had been key={:?} {:?}", key, item.resource);
+            // resource_destructor(item.resource.as_ref().unwrap())?;
+            item.resource = None;
+            // println!("Set resource to None for key={:?}", key)
         }
 
         cache_write_lock.insert(
@@ -122,12 +121,23 @@ where
         );
         Ok(resource.clone())
     }
+
+    pub fn for_each(&self, mut f: impl FnMut(&V)) {
+        self.internal_hash_map
+            .read()
+            .unwrap()
+            .values()
+            .for_each(|item| {
+                if let Some(r) = item.resource.as_ref() {
+                    f(r)
+                }
+            });
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::utils::sync_resource_cache::SyncResourceCache;
-    use std::collections::HashMap;
 
     fn upper(s: &str) -> Result<String, ()> {
         Ok(s.to_uppercase())
