@@ -1,35 +1,39 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::Relaxed;
+use std::sync::atomic::{AtomicU64, AtomicUsize};
 use std::sync::{Arc, RwLock};
 
+#[derive(Debug)]
 struct Item<V> {
     resource: Option<V>,
-    // freshness: u64,
+    freshness: AtomicU64,
 }
 
+#[derive(Debug)]
 pub struct SyncResourceCache<K, V>
 where
     K: Eq + Hash + Debug,
-    V: Clone,
+    V: Clone + Debug,
 {
     internal_hash_map: Arc<RwLock<HashMap<K, Item<V>>>>,
     resource_capacity: usize,
     open_resources: AtomicUsize,
+    access_counter: AtomicU64,
 }
 
 impl<K, V> SyncResourceCache<K, V>
 where
     K: Eq + Hash + Debug,
-    V: Clone,
+    V: Clone + Debug,
 {
     pub fn new(resource_capacity: usize) -> Self {
         SyncResourceCache {
             internal_hash_map: Arc::new(RwLock::new(HashMap::new())),
             resource_capacity,
             open_resources: AtomicUsize::new(0),
+            access_counter: AtomicU64::new(0),
         }
     }
 
@@ -39,12 +43,6 @@ where
 
     pub fn len_open(&self) -> usize {
         self.open_resources.load(Relaxed)
-        // self.internal_hash_map
-        //     .read()
-        //     .unwrap()
-        //     .values()
-        //     .filter(|v| v.resource.is_some())
-        //     .count()
     }
 
     pub fn capacity(&self) -> usize {
@@ -62,7 +60,22 @@ where
         }
     }
 
-    pub fn get_or_insert<F, E>(&self, key: K, resource_constructor: F) -> Result<V, E>
+    fn refresh_access(&self, item: &Item<V>) {
+        loop {
+            let freshness_before = item.freshness.load(Relaxed);
+            let freshness_after =
+                self.access_counter.fetch_add(1, Relaxed) + (freshness_before >> 1);
+            if item
+                .freshness
+                .compare_exchange_weak(freshness_before, freshness_after, Relaxed, Relaxed)
+                .is_ok()
+            {
+                break;
+            }
+        }
+    }
+
+    pub fn get_or_create<F, E>(&self, key: K, resource_constructor: F) -> Result<V, E>
     where
         F: Fn() -> Result<V, E>,
     {
@@ -77,27 +90,34 @@ where
         let mut cache_write_lock = self.internal_hash_map.write().unwrap();
         if let Some(item) = cache_write_lock.get(&key) {
             if let Some(r) = item.resource.clone() {
+                self.refresh_access(item);
                 return Ok(r);
             }
         }
         println!(
-            "cache_write_lock len={} vs self.resource_capacity={}",
+            "cache_write_lock len={} vs self.resource_capacity={} vs length of internal hash map{}",
             cache_write_lock.len(),
-            self.resource_capacity
+            self.resource_capacity,
+            cache_write_lock.len(),
         );
 
         let resource = resource_constructor()?;
         if self.open_resources.load(Relaxed) < self.resource_capacity {
             self.open_resources.fetch_add(1, Relaxed);
         } else {
-            let first = cache_write_lock.iter_mut().take(1);
-            first.for_each(|(_, v)| v.resource = None)
+            cache_write_lock
+                .values_mut()
+                .filter(|item| item.resource.is_some())
+                .min_by_key(|item| item.freshness.load(Relaxed))
+                .unwrap()
+                .resource = None
         }
 
         cache_write_lock.insert(
             key,
             Item {
                 resource: Some(resource.clone()),
+                freshness: AtomicU64::new(self.access_counter.fetch_add(1, Relaxed)),
             },
         );
         Ok(resource.clone())
@@ -122,20 +142,20 @@ mod tests {
 
         assert_eq!(
             cache
-                .get_or_insert(String::from("foo"), || upper("foo"))
+                .get_or_create(String::from("foo"), || upper("foo"))
                 .unwrap(),
             String::from("FOO")
         );
 
         assert_eq!(
             cache
-                .get_or_insert(String::from("bar"), || upper("bar"))
+                .get_or_create(String::from("bar"), || upper("bar"))
                 .unwrap(),
             String::from("BAR")
         );
         assert_eq!(
             cache
-                .get_or_insert(String::from("foobar"), || upper("FOOBAR"))
+                .get_or_create(String::from("foobar"), || upper("FOOBAR"))
                 .unwrap(),
             String::from("FOOBAR")
         );
@@ -144,7 +164,7 @@ mod tests {
 
         assert_eq!(
             cache
-                .get_or_insert(String::from("new1"), || upper("NEW1"))
+                .get_or_create(String::from("new1"), || upper("NEW1"))
                 .unwrap(),
             String::from("NEW1")
         );
@@ -153,6 +173,7 @@ mod tests {
         assert_eq!(cache.resource_is_open(&String::from("foo")), false);
         assert_eq!(cache.resource_is_open(&String::from("bar")), true);
         assert_eq!(cache.resource_is_open(&String::from("foobar")), true);
-        assert_eq!(cache.resource_is_open(&String::from("new1")), false);
+        assert_eq!(cache.resource_is_open(&String::from("new1")), true);
+        println!("cache {:?}", cache)
     }
 }
