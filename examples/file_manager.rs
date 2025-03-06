@@ -7,7 +7,7 @@ use std::num::NonZeroUsize;
 fn main() {
     utils::logging::init_logging();
 
-    let block_size = 4096;
+    let block_size = NonZeroUsize::new(4096).unwrap();
     let file_manager =
         FileManager::new("/tmp/test", block_size, NonZeroUsize::new(100).unwrap()).unwrap();
     println!("{file_manager:?}");

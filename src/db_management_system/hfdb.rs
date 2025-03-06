@@ -26,7 +26,7 @@ impl<'managers> HanfriedDb<'managers, '_> {
     ) -> Result<Self, std::io::Error> {
         let fm = Rc::new(RefCell::new(FileManager::new(
             db_directory,
-            block_size,
+            NonZeroUsize::new(block_size).unwrap(),
             NonZeroUsize::new(max_open_files).unwrap(),
         )?));
         let lm = Rc::new(RefCell::new(LogManager::new(fm.clone(), log_file)?));

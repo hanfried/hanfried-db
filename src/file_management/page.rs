@@ -1,12 +1,14 @@
+use std::num::NonZeroUsize;
+
 #[derive(Debug)]
 pub struct Page {
     byte_buffer: Vec<u8>,
 }
 
 impl Page {
-    pub fn new(block_size: usize) -> Self {
+    pub fn new(block_size: NonZeroUsize) -> Self {
         Self {
-            byte_buffer: vec![0; block_size],
+            byte_buffer: vec![0; usize::from(block_size)],
         }
     }
 

@@ -75,7 +75,7 @@ impl<'a> LogManager<'a> {
         log_page: &mut Page,
     ) -> Result<BlockId<'a>, std::io::Error> {
         let block_id = fm.append(log_file)?;
-        log_page.set_i32(0, fm.block_size as i32);
+        log_page.set_i32(0, usize::from(fm.block_size) as i32);
         fm.write(&block_id, log_page)?;
         debug!(
             "Append new block_id={:?}, log_file={:?}, log_page={:?}",
@@ -149,11 +149,12 @@ impl Iterator for LogManagerIter<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let block_size = self.file_manager.borrow().block_size;
-        let has_next = (self.pos_current < block_size) || (self.block.block_number > 0);
+        let has_next =
+            (self.pos_current < usize::from(block_size)) || (self.block.block_number > 0);
         if !has_next {
             return None;
         };
-        if self.pos_current == block_size {
+        if self.pos_current == usize::from(block_size) {
             self.block = BlockId::new(self.block.filename, self.block.block_number - 1);
             if let Err(read_block_result) = self
                 .file_manager
@@ -169,4 +170,14 @@ impl Iterator for LogManagerIter<'_> {
         self.pos_current += 4 + record.len();
         Some(Ok(record.to_vec()))
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::file_management::file_manager::FileManagerBuilder;
+    use crate::memory_management::log_manager::LogManager;
+
+    // fn test_log_manager() {
+    //     let file_manager = FileManagerBuilder::new()
+    // }
 }

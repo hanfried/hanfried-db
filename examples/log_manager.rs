@@ -3,11 +3,12 @@ use hanfried_db::file_management::page::Page;
 use hanfried_db::memory_management::log_manager::{LogManager, LogSequenceNumber};
 use hanfried_db::utils::logging::init_logging;
 use log::info;
+use std::num::NonZeroUsize;
 use std::ops::DerefMut;
 
 fn create_log_record(s: &str, n: i32) -> Vec<u8> {
     let n_pos = s.len() + 4;
-    let mut p = Page::new(n_pos + 4);
+    let mut p = Page::new(NonZeroUsize::new(n_pos + 4).unwrap());
     p.set_string(0, s);
     p.set_i32(n_pos, n);
     p.get_contents().to_vec()

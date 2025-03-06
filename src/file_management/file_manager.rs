@@ -12,15 +12,48 @@ use std::sync::{Arc, Mutex};
 #[derive(Debug, Clone)]
 pub struct FileManager<'a> {
     db_directory: &'a str,
-    pub block_size: usize,
-    // open_files: Arc<RwLock<HashMap<String, Arc<Mutex<File>>>>>,
+    pub block_size: NonZeroUsize,
     file_cache: Arc<SyncResourceCache<String, Arc<Mutex<File>>>>,
+}
+
+pub struct FileManagerBuilder<'a> {
+    db_directory: &'a str,
+    block_size: NonZeroUsize,
+    max_open_files: NonZeroUsize,
+}
+
+impl<'a> FileManagerBuilder<'a> {
+    pub fn new(db_directory: &str) -> FileManagerBuilder {
+        FileManagerBuilder {
+            db_directory,
+            block_size: NonZeroUsize::new(4096).unwrap(),
+            max_open_files: NonZeroUsize::new(512).unwrap(),
+        }
+    }
+
+    pub fn unittest() -> Self {
+        Self::new("/data/hanfried-db-unittest")
+    }
+
+    pub fn block_size(mut self, block_size: NonZeroUsize) -> Self {
+        self.block_size = block_size;
+        self
+    }
+
+    pub fn max_open_files(mut self, max_open_files: NonZeroUsize) -> Self {
+        self.max_open_files = max_open_files;
+        self
+    }
+
+    pub fn build(self) -> Result<FileManager<'a>, std::io::Error> {
+        FileManager::new(self.db_directory, self.block_size, self.max_open_files)
+    }
 }
 
 impl<'a> FileManager<'a> {
     pub fn new(
         db_directory: &'a str,
-        block_size: usize,
+        block_size: NonZeroUsize,
         max_size: NonZeroUsize,
     ) -> Result<FileManager<'a>, std::io::Error> {
         let db_root: &Path = Path::new(db_directory);
@@ -57,7 +90,6 @@ impl<'a> FileManager<'a> {
         Ok(FileManager {
             db_directory,
             block_size,
-            // open_files: Arc::new(RwLock::new(HashMap::new())),
             file_cache: Arc::new(SyncResourceCache::new(usize::from(max_size))),
         })
     }
@@ -86,10 +118,11 @@ impl<'a> FileManager<'a> {
         let mut file = file_binding.lock().unwrap();
         // println!("Locked file {:?} {:?}", block, file);
         let block_size = self.block_size;
-        let seek_from = std::io::SeekFrom::Start((block.block_number * block_size) as u64);
+        let seek_from =
+            std::io::SeekFrom::Start((block.block_number * usize::from(block_size)) as u64);
         // let mut file = file_binding.borrow_mut();
         file.seek(seek_from)?;
-        let mut buf: Vec<u8> = vec![0; block_size];
+        let mut buf: Vec<u8> = vec![0; usize::from(block_size)];
         let _bytes_read = file.read(&mut buf);
         page.set_contents(buf.as_slice());
         // println!("Read {:?} {:?}", block, page.get_contents());
@@ -101,7 +134,8 @@ impl<'a> FileManager<'a> {
         let file_binding = self.get_file(block.filename)?;
         let mut file = file_binding.lock().unwrap();
         // println!("Locked file {:?} {:?}", block, file);
-        let seek_from = std::io::SeekFrom::Start((block.block_number * self.block_size) as u64);
+        let seek_from =
+            std::io::SeekFrom::Start((block.block_number * usize::from(self.block_size)) as u64);
         // let mut file = self.get_file(block.filename)?;
         file.seek(seek_from)?;
         file.write_all(page.get_contents())?;
@@ -128,7 +162,8 @@ impl<'a> FileManager<'a> {
         let file_binding = self.get_file(filename).unwrap();
         let mut file = file_binding.lock().unwrap();
         let block = BlockId::new(filename, self._block_length(&mut file)?);
-        let seek_from = std::io::SeekFrom::Start((block.block_number * self.block_size) as u64);
+        let seek_from =
+            std::io::SeekFrom::Start((block.block_number * usize::from(self.block_size)) as u64);
         // let mut file = self.get_file(filename)?;
         file.seek(seek_from)?;
         Ok(block)
@@ -138,25 +173,23 @@ impl<'a> FileManager<'a> {
 #[cfg(test)]
 mod tests {
     use crate::file_management::block_id::BlockId;
-    use crate::file_management::file_manager::FileManager;
+    use crate::file_management::file_manager::{FileManager, FileManagerBuilder};
     use crate::file_management::page::Page;
     use std::num::NonZeroUsize;
     use std::thread;
     use std::thread::JoinHandle;
 
-    const TEST_FILES_MAX: usize = 1200;
-    const TEST_FILES_CACHE: NonZeroUsize = NonZeroUsize::new(800).unwrap();
-    const TEST_FILES_BLOCKS: usize = 5;
-    const TEST_FILES_BLOCKSIZE: usize = 4096;
-    const TEST_FILES_DB_DIRECTORY: &str = "/data/hanfried-db-unittest";
+    const TEST_FILES_MAX: usize = 2000;
+    const TEST_FILES_CACHE: NonZeroUsize = NonZeroUsize::new(500).unwrap();
+    const TEST_FILES_BLOCKS: usize = 10;
+    const TEST_FILES_BLOCKSIZE: NonZeroUsize = NonZeroUsize::new(4096).unwrap();
     #[test]
     fn test_file_manager() {
-        let file_manager = FileManager::new(
-            TEST_FILES_DB_DIRECTORY,
-            TEST_FILES_BLOCKSIZE,
-            TEST_FILES_CACHE,
-        )
-        .unwrap();
+        let file_manager: FileManager = FileManagerBuilder::unittest()
+            .block_size(TEST_FILES_BLOCKSIZE)
+            .max_open_files(TEST_FILES_CACHE)
+            .build()
+            .unwrap();
         let mut parallel_write_threads: Vec<JoinHandle<()>> = Vec::new();
         for file_nr in 0..TEST_FILES_MAX {
             for block_nr in 0..TEST_FILES_BLOCKS {
