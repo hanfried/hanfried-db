@@ -1,6 +1,6 @@
 use crate::file_management::block_id::BlockId;
 use crate::file_management::page::Page;
-use crate::utils::sync_cache::SyncCache;
+use crate::utils::sync_resource_cache::SyncResourceCache;
 use log::info;
 use std::fs;
 use std::fs::{File, OpenOptions};
@@ -14,7 +14,7 @@ pub struct FileManager<'a> {
     db_directory: &'a str,
     pub block_size: usize,
     // open_files: Arc<RwLock<HashMap<String, Arc<Mutex<File>>>>>,
-    open_files: Arc<SyncCache<String, Arc<Mutex<File>>>>,
+    file_cache: Arc<SyncResourceCache<String, Arc<Mutex<File>>>>,
 }
 
 impl<'a> FileManager<'a> {
@@ -45,12 +45,12 @@ impl<'a> FileManager<'a> {
             db_directory,
             block_size,
             // open_files: Arc::new(RwLock::new(HashMap::new())),
-            open_files: Arc::new(SyncCache::new(max_size)),
+            file_cache: Arc::new(SyncResourceCache::new(usize::from(max_size))),
         })
     }
 
     fn get_file(&self, filename: &str) -> Result<Arc<Mutex<File>>, std::io::Error> {
-        self.open_files.get_or_insert(filename.to_string(), || {
+        self.file_cache.get_or_create(filename.to_string(), || {
             let f = OpenOptions::new()
                 .read(true)
                 .write(true)
@@ -88,7 +88,7 @@ impl<'a> FileManager<'a> {
 
     pub fn open_files_count(&self) -> usize {
         //self.open_files.read().unwrap().len()
-        self.open_files.len()
+        self.file_cache.len_open()
     }
 
     // TODO: Synchronize
