@@ -24,12 +24,19 @@ pub struct FileManagerBuilder {
 }
 
 impl FileManagerBuilder {
-    pub fn new(db_directory: String) -> FileManagerBuilder {
+    pub fn new(db_directory: String) -> Self {
         FileManagerBuilder {
             db_directory,
             block_size: NonZeroUsize::new(4096).unwrap(),
             max_open_files: NonZeroUsize::new(512).unwrap(),
         }
+    }
+
+    const TEST_DB_DIR: &'static str = "/data/hanfried-db-unittest";
+
+    pub fn unittest(db_sub_directory: &str) -> Self {
+        let db_directory = Self::TEST_DB_DIR;
+        Self::new(format!("{db_directory}/{db_sub_directory}"))
     }
 
     pub fn block_size(mut self, block_size: NonZeroUsize) -> Self {
@@ -135,7 +142,7 @@ impl FileManager {
     }
 
     pub fn read(&self, block: &BlockId, page: &mut Page) -> Result<(), IoError> {
-        let file_binding = self.get_file(block.filename)?;
+        let file_binding = self.get_file(block.filename.as_str())?;
         let mut file = file_binding.lock().unwrap();
         let block_size = self.block_size;
         let seek_from =
@@ -151,7 +158,7 @@ impl FileManager {
     }
 
     pub fn write(&self, block: &BlockId, page: &Page) -> Result<(), IoError> {
-        let file_binding = self.get_file(block.filename)?;
+        let file_binding = self.get_file(block.filename.as_str())?;
         let mut file = file_binding.lock().unwrap();
         // println!("Locked file {:?} {:?}", block, file);
         let seek_from =
@@ -187,7 +194,7 @@ impl FileManager {
         Ok(eof_offset as usize / self.block_size)
     }
 
-    pub fn append<'a>(&self, filename: &'a str) -> Result<BlockId<'a>, IoError> {
+    pub fn append(&self, filename: &str) -> Result<BlockId, IoError> {
         let file_binding = self.get_file(filename).unwrap();
         let mut file = file_binding.lock().unwrap();
         let block = BlockId::new(
@@ -210,7 +217,7 @@ impl FileManager {
 #[cfg(test)]
 mod tests {
     use crate::file_management::block_id::BlockId;
-    use crate::file_management::file_manager::{FileManager, FileManagerBuilder};
+    use crate::file_management::file_manager::FileManagerBuilder;
     use crate::file_management::page::Page;
     use std::num::NonZeroUsize;
     use std::sync::atomic::AtomicBool;
@@ -218,20 +225,19 @@ mod tests {
     use std::thread;
     use std::thread::JoinHandle;
 
-    const TEST_DB_DIR: &str = "/data/hanfried-db-unittest";
-
     const TEST_FILES_MAX: usize = 2000;
     const TEST_FILES_CACHE: NonZeroUsize = NonZeroUsize::new(500).unwrap();
     const TEST_FILES_BLOCKS: usize = 10;
     const TEST_FILES_BLOCKSIZE: NonZeroUsize = NonZeroUsize::new(4096).unwrap();
     #[test]
     fn test_file_manager_writing_and_then_reading() {
-        let db_dir = format!("{TEST_DB_DIR}/file_manager_writing_and_then_reading");
-        let file_manager: FileManager = FileManagerBuilder::new(db_dir)
-            .block_size(TEST_FILES_BLOCKSIZE)
-            .max_open_files(TEST_FILES_CACHE)
-            .build()
-            .unwrap();
+        let file_manager = Arc::new(
+            FileManagerBuilder::unittest("file_manager_writing_and_then_reading")
+                .block_size(TEST_FILES_BLOCKSIZE)
+                .max_open_files(TEST_FILES_CACHE)
+                .build()
+                .unwrap(),
+        );
         let mut parallel_write_threads: Vec<JoinHandle<()>> = Vec::new();
         for file_nr in 0..TEST_FILES_MAX {
             for block_nr in 0..TEST_FILES_BLOCKS {
@@ -283,8 +289,11 @@ mod tests {
     const PARALLEL_READS_THREADS: usize = 100;
     #[test]
     fn test_file_manager_not_blocking_writes() {
-        let db_dir = format!("{TEST_DB_DIR}/file_manager_not_blocking_writes");
-        let file_manager: FileManager = FileManagerBuilder::new(db_dir).build().unwrap();
+        let file_manager = Arc::new(
+            FileManagerBuilder::unittest("file_manager_not_blocking_writes")
+                .build()
+                .unwrap(),
+        );
 
         let testing_finished = Arc::new(AtomicBool::new(false));
 

@@ -17,7 +17,7 @@ fn main() {
     println!("{file_manager:?}");
 
     let block = BlockId {
-        filename: "testfile",
+        filename: "testfile".to_string(),
         block_number: 2,
     };
     println!("{block:?}");

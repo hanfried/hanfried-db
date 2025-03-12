@@ -19,7 +19,7 @@ fn create_records(log_manager: &mut LogManager, start: i32, end: i32) {
     for i in start..end + 1 {
         let log_record = create_log_record(format!("record{}", i).as_str(), i + 100);
         let log_sequence_number = log_manager.append(log_record.as_slice()).unwrap();
-        info!("log sequence number: {}", log_sequence_number);
+        info!("log sequence number: {}", log_sequence_number.latest);
     }
     info!("Finished creating records start: {}, end: {}", start, end);
 }
@@ -42,12 +42,20 @@ fn main() {
     let block_size = 400;
     let log_file = "hfdb.log";
 
-    let hanfried_db =
-        HanfriedDb::new(db_directory.to_string(), block_size, log_file, 8, 100).unwrap();
+    let hanfried_db = HanfriedDb::new(
+        db_directory.to_string(),
+        block_size,
+        log_file.to_string(),
+        8,
+        100,
+    )
+    .unwrap();
     println!("{hanfried_db:?}");
 
     // let file_manager = hanfried_db.file_manager;
-    let mut lm_binding = hanfried_db.log_manager.borrow_mut();
+    // let mut lm_binding = hanfried_db.log_manager.borrow_mut();
+    // let lm = lm_binding.deref_mut();
+    let mut lm_binding = hanfried_db.log_manager.lock().unwrap();
     let lm = lm_binding.deref_mut();
 
     create_records(lm, 1, 35);

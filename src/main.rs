@@ -5,7 +5,6 @@ use hanfried_db::memory_management::buffer::TransactionNumber;
 use hanfried_db::memory_management::log_manager::LogSequenceNumber;
 use hanfried_db::utils::logging::init_logging;
 use log::{debug, info};
-use std::ops::{Deref, DerefMut};
 
 fn main() {
     init_logging();
@@ -18,7 +17,7 @@ fn main() {
     let hanfried_db = HanfriedDb::new(
         db_directory.to_string(),
         block_size,
-        log_file,
+        log_file.to_string(),
         pool_size,
         100,
     )
@@ -26,11 +25,12 @@ fn main() {
     info!("HanfriedDB {hanfried_db:?}");
 
     let buffer_manager = hanfried_db.buffer_manager;
-    let mut bm_binding = buffer_manager.borrow_mut();
-    let bm = bm_binding.deref_mut();
+    // let mut bm_binding = buffer_manager.clone();
+    // let bm = bm_binding.deref_mut();
+    let bm = buffer_manager.clone();
     debug!("buffer_manager {:?}", buffer_manager);
     let block1 = BlockId::new("testfile", 1);
-    let buffer1_pin = bm.pin(block1);
+    let buffer1_pin = bm.pin(block1.clone());
     {
         let mut buffer1_binding = buffer1_pin.unwrap().write().unwrap();
         let page = buffer1_binding.contents_mut();
@@ -45,9 +45,10 @@ fn main() {
     let _buffer3_pin = bm.pin(BlockId::new("testfile", 3));
     let _buffer4_pin = bm.pin(BlockId::new("testfile", 4));
 
-    let file_manager = hanfried_db.file_manager;
-    let fm_binding = file_manager.borrow();
-    let fm = fm_binding.deref();
+    // let file_manager = hanfried_db.file_manager;
+    // let fm_binding = file_manager.borrow();
+    // let fm = fm_binding.deref();
+    let fm = hanfried_db.file_manager;
     let mut page = Page::new(fm.block_size);
     fm.read(&block1, &mut page).unwrap();
     info!(

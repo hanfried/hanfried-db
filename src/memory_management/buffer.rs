@@ -3,10 +3,9 @@ use crate::file_management::file_manager::{FileManager, IoError};
 use crate::file_management::page::Page;
 use crate::memory_management::log_manager::{LogManager, LogSequenceNumber};
 use log::debug;
-use std::cell::RefCell;
 use std::fmt::Display;
 use std::num::NonZeroUsize;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct TransactionNumber(NonZeroUsize);
@@ -18,17 +17,17 @@ impl TransactionNumber {
 }
 
 #[derive(Debug)]
-pub struct Buffer<'managers, 'blocks> {
-    file_manager: Rc<RefCell<FileManager>>,
-    log_manager: Rc<RefCell<LogManager<'managers>>>,
+pub struct Buffer {
+    file_manager: Arc<FileManager>,
+    log_manager: Arc<Mutex<LogManager>>,
     contents: Page,
-    block: Option<BlockId<'blocks>>,
+    block: Option<BlockId>,
     pins_count: usize,
     transaction_number: Option<TransactionNumber>,
     log_sequence_number: Option<LogSequenceNumber>,
 }
 
-impl Display for Buffer<'_, '_> {
+impl Display for Buffer {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
@@ -38,15 +37,12 @@ impl Display for Buffer<'_, '_> {
     }
 }
 
-impl<'managers, 'blocks> Buffer<'managers, 'blocks> {
-    pub fn new(
-        file_manager: Rc<RefCell<FileManager>>,
-        log_manager: Rc<RefCell<LogManager<'managers>>>,
-    ) -> Buffer<'managers, 'blocks> {
+impl Buffer {
+    pub fn new(file_manager: Arc<FileManager>, log_manager: Arc<Mutex<LogManager>>) -> Buffer {
         Buffer {
             file_manager: file_manager.clone(),
             log_manager,
-            contents: Page::new(file_manager.borrow().block_size),
+            contents: Page::new(file_manager.block_size),
             block: None,
             pins_count: 0,
             transaction_number: None,
@@ -62,8 +58,8 @@ impl<'managers, 'blocks> Buffer<'managers, 'blocks> {
         &mut self.contents
     }
 
-    pub fn block(&self) -> Option<BlockId<'blocks>> {
-        self.block
+    pub fn block(&self) -> Option<BlockId> {
+        self.block.clone()
     }
 
     pub fn set_modified(
@@ -91,23 +87,21 @@ impl<'managers, 'blocks> Buffer<'managers, 'blocks> {
         self.transaction_number
     }
 
-    pub fn assign_to_block(&mut self, block_id: BlockId<'blocks>) -> Result<(), IoError> {
+    pub fn assign_to_block(&mut self, block_id: BlockId) -> Result<(), IoError> {
         debug!(
             "Buffer: Assigning to block {:?} <- block {:?}",
             self.block, block_id
         );
         self.flush()?;
-        self.block = Some(block_id);
+        self.block = Some(block_id.clone());
         debug!(
             "Buffer: Assigning to block={:?}, read file_manager={:?} contents={:?}",
-            block_id, self.file_manager, self.contents
+            &block_id, self.file_manager, self.contents
         );
-        self.file_manager
-            .borrow_mut()
-            .read(&block_id, &mut self.contents)?;
+        self.file_manager.read(&block_id, &mut self.contents)?;
         debug!(
             "Buffer: Assigning to block={:?}, set pins_count=0",
-            block_id
+            &block_id
         );
         self.pins_count = 0;
         Ok(())
@@ -118,10 +112,9 @@ impl<'managers, 'blocks> Buffer<'managers, 'blocks> {
         if self.transaction_number.is_some() {
             debug!("Buffer: Flush {}", self);
             if let Some(lsn) = self.log_sequence_number {
-                self.log_manager.borrow_mut().flush(lsn)?;
+                self.log_manager.lock().unwrap().flush(lsn)?;
             }
             self.file_manager
-                .borrow_mut()
                 .write(&self.block().unwrap(), &self.contents)?;
             self.transaction_number = None;
         }

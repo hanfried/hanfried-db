@@ -1,6 +1,6 @@
 use std::num::NonZeroUsize;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Page {
     byte_buffer: Vec<u8>,
 }

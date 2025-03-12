@@ -4,27 +4,25 @@ use crate::memory_management::buffer::{Buffer, TransactionNumber};
 use crate::memory_management::buffer_manager::BufferManagerError::{DeadLockTimeout, NoCapacity};
 use crate::memory_management::log_manager::LogManager;
 use log::{debug, warn};
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Condvar, Mutex, RwLock};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::time::Duration;
 
 #[derive(Debug)]
-pub struct BufferManager<'managers, 'blocks> {
-    pool: Vec<RwLock<Buffer<'managers, 'blocks>>>,
+pub struct BufferManager {
+    pool: Vec<RwLock<Buffer>>,
     num_available: Mutex<usize>,
     buffer_available: Condvar,
     deadlock_waiting_duration: Duration,
 }
 
 #[allow(elided_named_lifetimes)]
-impl<'managers, 'blocks> BufferManager<'managers, 'blocks> {
+impl BufferManager {
     pub fn new(
-        file_manager: Rc<RefCell<FileManager>>,
-        log_manager: Rc<RefCell<LogManager<'managers>>>,
+        file_manager: Arc<FileManager>,
+        log_manager: Arc<Mutex<LogManager>>,
         pool_size: usize,
         deadlock_waiting_duration: Duration,
-    ) -> BufferManager<'managers, 'blocks> {
+    ) -> BufferManager {
         let mut pool: Vec<RwLock<Buffer>> = Vec::with_capacity(pool_size);
         for _ in 0..pool_size {
             pool.push(RwLock::new(Buffer::new(
@@ -66,13 +64,10 @@ impl<'managers, 'blocks> BufferManager<'managers, 'blocks> {
         }
     }
 
-    pub fn pin(
-        &self,
-        block: BlockId<'blocks>,
-    ) -> Result<&RwLock<Buffer<'managers, 'blocks>>, BufferManagerError> {
+    pub fn pin(&self, block: BlockId) -> Result<&RwLock<Buffer>, BufferManagerError> {
         debug!("Called Buffermanager pin: {:?}", block);
         loop {
-            let buffer_guard = self.try_to_pin(block);
+            let buffer_guard = self.try_to_pin(block.clone());
             match buffer_guard {
                 Ok(buffer) => {
                     debug!("BufferManager: Pin buffer block {:?}", block);
@@ -110,16 +105,16 @@ impl<'managers, 'blocks> BufferManager<'managers, 'blocks> {
         &self,
         block: BlockId,
         // ) -> Option<MutexGuard<Buffer<'managers, 'blocks>>> {
-    ) -> Option<&RwLock<Buffer<'managers, 'blocks>>> {
+    ) -> Option<&RwLock<Buffer>> {
         // Todo: Looping through whole list with locking seems overkill (map datastructure or something like that)
         // and not sure whether data might be changeable after finding and unlocking it again
         debug!("Find existing buffer for block {:?}", block);
         self.pool
             .iter()
-            .find(|b| b.read().unwrap().block() == Some(block))
+            .find(|b| b.read().unwrap().block() == Some(block.clone()))
     }
 
-    fn choose_unpinned_buffer(&self) -> Option<&RwLock<Buffer<'managers, 'blocks>>> {
+    fn choose_unpinned_buffer(&self) -> Option<&RwLock<Buffer>> {
         // -> Option<MutexGuard<Buffer<'managers, 'blocks>>> {
         debug!("Choose an unpinned buffer");
         // Todo: Looping through whole list with locking seems overkill
@@ -129,12 +124,12 @@ impl<'managers, 'blocks> BufferManager<'managers, 'blocks> {
 
     fn try_to_pin(
         &self,
-        block: BlockId<'blocks>,
+        block: BlockId,
         // ) -> Result<MutexGuard<Buffer<'managers, 'blocks>>, BufferManagerError> {
-    ) -> Result<&RwLock<Buffer<'managers, 'blocks>>, BufferManagerError> {
+    ) -> Result<&RwLock<Buffer>, BufferManagerError> {
         debug!("BufferManager: Trying to pin block {:?}", block);
         let buffer = self
-            .find_existing_buffer(block)
+            .find_existing_buffer(block.clone())
             .or_else(|| self.choose_unpinned_buffer());
 
         if buffer.is_none() {
