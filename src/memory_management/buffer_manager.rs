@@ -1,5 +1,5 @@
 use crate::file_management::block_id::BlockId;
-use crate::file_management::file_manager::FileManager;
+use crate::file_management::file_manager::{FileManager, IoError};
 use crate::memory_management::buffer::{Buffer, TransactionNumber};
 use crate::memory_management::buffer_manager::BufferManagerError::{DeadLockTimeout, NoCapacity};
 use crate::memory_management::log_manager::LogManager;
@@ -20,7 +20,7 @@ pub struct BufferManager<'managers, 'blocks> {
 #[allow(elided_named_lifetimes)]
 impl<'managers, 'blocks> BufferManager<'managers, 'blocks> {
     pub fn new(
-        file_manager: Rc<RefCell<FileManager<'managers>>>,
+        file_manager: Rc<RefCell<FileManager>>,
         log_manager: Rc<RefCell<LogManager<'managers>>>,
         pool_size: usize,
         deadlock_waiting_duration: Duration,
@@ -44,10 +44,7 @@ impl<'managers, 'blocks> BufferManager<'managers, 'blocks> {
         *self.num_available.lock().unwrap()
     }
 
-    pub fn flush_all(
-        &mut self,
-        transaction_number: TransactionNumber,
-    ) -> Result<(), std::io::Error> {
+    pub fn flush_all(&mut self, transaction_number: TransactionNumber) -> Result<(), IoError> {
         debug!("BufferManager: Flush all for {:?}", transaction_number);
         for buffer in self.pool.iter() {
             // Todo: Locking just to see of a transaction number is set seems overkill
@@ -176,7 +173,7 @@ impl<'managers, 'blocks> BufferManager<'managers, 'blocks> {
 
 #[derive(Debug)]
 pub enum BufferManagerError {
-    StdIoError(std::io::Error),
+    StdIoError(IoError),
     NoCapacity,
     DeadLockTimeout,
 }

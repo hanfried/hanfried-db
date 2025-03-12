@@ -8,8 +8,12 @@ fn main() {
     utils::logging::init_logging();
 
     let block_size = NonZeroUsize::new(4096).unwrap();
-    let file_manager =
-        FileManager::new("/tmp/test", block_size, NonZeroUsize::new(100).unwrap()).unwrap();
+    let file_manager = FileManager::new(
+        "/tmp/test".to_string(),
+        block_size,
+        NonZeroUsize::new(100).unwrap(),
+    )
+    .unwrap();
     println!("{file_manager:?}");
 
     let block = BlockId {

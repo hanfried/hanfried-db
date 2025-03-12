@@ -15,7 +15,14 @@ fn main() {
     let pool_size = 3;
     let log_file = "hfdb.log";
 
-    let hanfried_db = HanfriedDb::new(db_directory, block_size, log_file, pool_size, 100).unwrap();
+    let hanfried_db = HanfriedDb::new(
+        db_directory.to_string(),
+        block_size,
+        log_file,
+        pool_size,
+        100,
+    )
+    .unwrap();
     info!("HanfriedDB {hanfried_db:?}");
 
     let buffer_manager = hanfried_db.buffer_manager;

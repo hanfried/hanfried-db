@@ -1,5 +1,5 @@
 use crate::file_management::block_id::BlockId;
-use crate::file_management::file_manager::FileManager;
+use crate::file_management::file_manager::{FileManager, IoError};
 use crate::file_management::page::Page;
 use crate::memory_management::log_manager::{LogManager, LogSequenceNumber};
 use log::debug;
@@ -19,7 +19,7 @@ impl TransactionNumber {
 
 #[derive(Debug)]
 pub struct Buffer<'managers, 'blocks> {
-    file_manager: Rc<RefCell<FileManager<'managers>>>,
+    file_manager: Rc<RefCell<FileManager>>,
     log_manager: Rc<RefCell<LogManager<'managers>>>,
     contents: Page,
     block: Option<BlockId<'blocks>>,
@@ -40,7 +40,7 @@ impl Display for Buffer<'_, '_> {
 
 impl<'managers, 'blocks> Buffer<'managers, 'blocks> {
     pub fn new(
-        file_manager: Rc<RefCell<FileManager<'managers>>>,
+        file_manager: Rc<RefCell<FileManager>>,
         log_manager: Rc<RefCell<LogManager<'managers>>>,
     ) -> Buffer<'managers, 'blocks> {
         Buffer {
@@ -91,7 +91,7 @@ impl<'managers, 'blocks> Buffer<'managers, 'blocks> {
         self.transaction_number
     }
 
-    pub fn assign_to_block(&mut self, block_id: BlockId<'blocks>) -> Result<(), std::io::Error> {
+    pub fn assign_to_block(&mut self, block_id: BlockId<'blocks>) -> Result<(), IoError> {
         debug!(
             "Buffer: Assigning to block {:?} <- block {:?}",
             self.block, block_id
@@ -114,7 +114,7 @@ impl<'managers, 'blocks> Buffer<'managers, 'blocks> {
     }
 
     // TODO: maybe not public
-    pub fn flush(&mut self) -> Result<(), std::io::Error> {
+    pub fn flush(&mut self) -> Result<(), IoError> {
         if self.transaction_number.is_some() {
             debug!("Buffer: Flush {}", self);
             if let Some(lsn) = self.log_sequence_number {

@@ -1,4 +1,4 @@
-use crate::file_management::file_manager::FileManager;
+use crate::file_management::file_manager::{FileManager, IoError};
 use crate::memory_management::buffer_manager::BufferManager;
 use crate::memory_management::log_manager::LogManager;
 use std::cell::RefCell;
@@ -11,19 +11,19 @@ pub struct HanfriedDb<'managers, 'blocks>
 where
     'managers: 'blocks,
 {
-    pub file_manager: Rc<RefCell<FileManager<'managers>>>,
+    pub file_manager: Rc<RefCell<FileManager>>,
     pub log_manager: Rc<RefCell<LogManager<'managers>>>,
     pub buffer_manager: Rc<RefCell<BufferManager<'managers, 'blocks>>>,
 }
 
 impl<'managers> HanfriedDb<'managers, '_> {
     pub fn new(
-        db_directory: &'managers str,
+        db_directory: String,
         block_size: usize,
         log_file: &'managers str,
         pool_size: usize,
         max_open_files: usize,
-    ) -> Result<Self, std::io::Error> {
+    ) -> Result<Self, IoError> {
         let fm = Rc::new(RefCell::new(FileManager::new(
             db_directory,
             NonZeroUsize::new(block_size).unwrap(),

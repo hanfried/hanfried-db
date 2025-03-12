@@ -2,6 +2,7 @@ use crate::file_management::block_id::BlockId;
 use crate::file_management::page::Page;
 use crate::utils::sync_resource_cache::SyncResourceCache;
 use log::info;
+use std::fmt::{Display, Formatter};
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, Write};
@@ -10,29 +11,25 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
-pub struct FileManager<'a> {
-    db_directory: &'a str,
+pub struct FileManager {
+    db_directory: String,
     pub block_size: NonZeroUsize,
     file_cache: Arc<SyncResourceCache<String, Arc<Mutex<File>>>>,
 }
 
-pub struct FileManagerBuilder<'a> {
-    db_directory: &'a str,
+pub struct FileManagerBuilder {
+    db_directory: String,
     block_size: NonZeroUsize,
     max_open_files: NonZeroUsize,
 }
 
-impl<'a> FileManagerBuilder<'a> {
-    pub fn new(db_directory: &str) -> FileManagerBuilder {
+impl FileManagerBuilder {
+    pub fn new(db_directory: String) -> FileManagerBuilder {
         FileManagerBuilder {
             db_directory,
             block_size: NonZeroUsize::new(4096).unwrap(),
             max_open_files: NonZeroUsize::new(512).unwrap(),
         }
-    }
-
-    pub fn unittest() -> Self {
-        Self::new("/data/hanfried-db-unittest")
     }
 
     pub fn block_size(mut self, block_size: NonZeroUsize) -> Self {
@@ -45,24 +42,43 @@ impl<'a> FileManagerBuilder<'a> {
         self
     }
 
-    pub fn build(self) -> Result<FileManager<'a>, std::io::Error> {
+    pub fn build(self) -> Result<FileManager, IoError> {
         FileManager::new(self.db_directory, self.block_size, self.max_open_files)
     }
 }
 
-impl<'a> FileManager<'a> {
+#[derive(Debug)]
+pub struct IoError {
+    error: std::io::Error,
+    context: String,
+}
+
+impl Display for IoError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} context: {}", self.error, self.context)
+    }
+}
+
+impl FileManager {
     pub fn new(
-        db_directory: &'a str,
+        db_directory: String,
         block_size: NonZeroUsize,
         max_size: NonZeroUsize,
-    ) -> Result<FileManager<'a>, std::io::Error> {
-        let db_root: &Path = Path::new(db_directory);
+    ) -> Result<FileManager, IoError> {
+        let db_root: &Path = Path::new(db_directory.as_str());
         if !db_root.exists() {
             info!("Create db root: {:?}", db_root);
-            fs::create_dir(db_root)?;
+            fs::create_dir_all(db_root).map_err(|error| IoError {
+                error,
+                context: format!("create db root {db_root:?}"),
+            })?;
         }
 
-        let temp_files: Vec<PathBuf> = fs::read_dir(db_root)?
+        let temp_files: Vec<PathBuf> = fs::read_dir(db_root)
+            .map_err(|error| IoError {
+                error,
+                context: format!("read_dir db root {db_root:?}"),
+            })?
             .filter(|r| r.is_ok())
             .map(|r| r.unwrap().path())
             .filter(|p| {
@@ -82,7 +98,12 @@ impl<'a> FileManager<'a> {
             .collect();
         if !temp_files.is_empty() {
             for t in temp_files {
-                fs::remove_file(t)?;
+                match fs::remove_file(t.clone()) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        println!("Failed to remove temp file {:?}: {:?}", t, e);
+                    }
+                };
             }
         }
 
@@ -93,14 +114,18 @@ impl<'a> FileManager<'a> {
         })
     }
 
-    fn get_file(&self, filename: &str) -> Result<Arc<Mutex<File>>, std::io::Error> {
+    fn get_file(&self, filename: &str) -> Result<Arc<Mutex<File>>, IoError> {
         self.file_cache.get_or_create(filename.to_string(), || {
             let f = OpenOptions::new()
                 .read(true)
                 .write(true)
                 .create(true)
                 .truncate(false)
-                .open(Path::new(self.db_directory).join(filename))?;
+                .open(Path::new(self.db_directory.as_str()).join(filename))
+                .map_err(|error| IoError {
+                    error,
+                    context: format!("get_file open file {}", filename),
+                })?;
             Ok(Arc::new(Mutex::new(f)))
         })
     }
@@ -109,36 +134,52 @@ impl<'a> FileManager<'a> {
         self.file_cache.len_open()
     }
 
-    pub fn read(&self, block: &BlockId, page: &mut Page) -> Result<(), std::io::Error> {
+    pub fn read(&self, block: &BlockId, page: &mut Page) -> Result<(), IoError> {
         let file_binding = self.get_file(block.filename)?;
         let mut file = file_binding.lock().unwrap();
         let block_size = self.block_size;
         let seek_from =
             std::io::SeekFrom::Start((block.block_number * usize::from(block_size)) as u64);
-        file.seek(seek_from)?;
+        file.seek(seek_from).map_err(|error| IoError {
+            error,
+            context: format!("read seek file block {:?}", block),
+        })?;
         let mut buf: Vec<u8> = vec![0; usize::from(block_size)];
         let _bytes_read = file.read(&mut buf);
         page.set_contents(buf.as_slice());
         Ok(())
     }
 
-    pub fn write(&self, block: &BlockId, page: &Page) -> Result<(), std::io::Error> {
+    pub fn write(&self, block: &BlockId, page: &Page) -> Result<(), IoError> {
         let file_binding = self.get_file(block.filename)?;
         let mut file = file_binding.lock().unwrap();
         // println!("Locked file {:?} {:?}", block, file);
         let seek_from =
             std::io::SeekFrom::Start((block.block_number * usize::from(self.block_size)) as u64);
-        file.seek(seek_from)?;
-        file.write_all(page.get_contents())?;
-        file.flush()?;
+        file.seek(seek_from).map_err(|error| IoError {
+            error,
+            context: format!("write seek file block {:?}", block),
+        })?;
+        file.write_all(page.get_contents())
+            .map_err(|error| IoError {
+                error,
+                context: format!("write write_all page contents file block {:?}", block),
+            })?;
+        file.flush().map_err(|error| IoError {
+            error,
+            context: format!("write flush file block {:?}", block),
+        })?;
         Ok(())
     }
 
-    pub fn block_length(&self, filename: &str) -> Result<usize, std::io::Error> {
+    pub fn block_length(&self, filename: &str) -> Result<usize, IoError> {
         // let mut file = self.get_file(filename)?;
         let file_binding = self.get_file(filename).unwrap();
         let mut file = file_binding.lock().unwrap();
-        self._block_length(&mut file)
+        self._block_length(&mut file).map_err(|error| IoError {
+            error,
+            context: format!("block length {}", filename),
+        })
     }
 
     pub fn _block_length(&self, file: &mut File) -> Result<usize, std::io::Error> {
@@ -146,13 +187,22 @@ impl<'a> FileManager<'a> {
         Ok(eof_offset as usize / self.block_size)
     }
 
-    pub fn append(&self, filename: &'a str) -> Result<BlockId<'a>, std::io::Error> {
+    pub fn append<'a>(&self, filename: &'a str) -> Result<BlockId<'a>, IoError> {
         let file_binding = self.get_file(filename).unwrap();
         let mut file = file_binding.lock().unwrap();
-        let block = BlockId::new(filename, self._block_length(&mut file)?);
+        let block = BlockId::new(
+            filename,
+            self._block_length(&mut file).map_err(|error| IoError {
+                error,
+                context: format!("append block length filename {}", filename),
+            })?,
+        );
         let seek_from =
             std::io::SeekFrom::Start((block.block_number * usize::from(self.block_size)) as u64);
-        file.seek(seek_from)?;
+        file.seek(seek_from).map_err(|error| IoError {
+            error,
+            context: format!("block length {}", filename),
+        })?;
         Ok(block)
     }
 }
@@ -163,16 +213,21 @@ mod tests {
     use crate::file_management::file_manager::{FileManager, FileManagerBuilder};
     use crate::file_management::page::Page;
     use std::num::NonZeroUsize;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
     use std::thread;
     use std::thread::JoinHandle;
+
+    const TEST_DB_DIR: &str = "/data/hanfried-db-unittest";
 
     const TEST_FILES_MAX: usize = 2000;
     const TEST_FILES_CACHE: NonZeroUsize = NonZeroUsize::new(500).unwrap();
     const TEST_FILES_BLOCKS: usize = 10;
     const TEST_FILES_BLOCKSIZE: NonZeroUsize = NonZeroUsize::new(4096).unwrap();
     #[test]
-    fn test_file_manager() {
-        let file_manager: FileManager = FileManagerBuilder::unittest()
+    fn test_file_manager_writing_and_then_reading() {
+        let db_dir = format!("{TEST_DB_DIR}/file_manager_writing_and_then_reading");
+        let file_manager: FileManager = FileManagerBuilder::new(db_dir)
             .block_size(TEST_FILES_BLOCKSIZE)
             .max_open_files(TEST_FILES_CACHE)
             .build()
@@ -222,5 +277,71 @@ mod tests {
             usize::from(TEST_FILES_CACHE),
             file_manager.open_files_count()
         );
+    }
+
+    const TEST_FILES_SOME: usize = 100;
+    const PARALLEL_READS_THREADS: usize = 100;
+    #[test]
+    fn test_file_manager_not_blocking_writes() {
+        let db_dir = format!("{TEST_DB_DIR}/file_manager_not_blocking_writes");
+        let file_manager: FileManager = FileManagerBuilder::new(db_dir).build().unwrap();
+
+        let testing_finished = Arc::new(AtomicBool::new(false));
+
+        let mut parallel_read_threads_some_files: Vec<JoinHandle<()>> = Vec::new();
+        for thread_nr in 0..PARALLEL_READS_THREADS {
+            let fm = file_manager.clone();
+            let testing_finished = testing_finished.clone();
+            parallel_read_threads_some_files.push(thread::spawn(move || {
+                println!(
+                    "parallel read thread {} started with eternal loop",
+                    thread_nr
+                );
+                loop {
+                    let mut page = Page::new(TEST_FILES_BLOCKSIZE);
+                    for file_nr in 0..TEST_FILES_SOME {
+                        let fname = format!("testfile_{}", file_nr);
+                        let block = BlockId::new(fname.as_str(), 0);
+                        fm.read(&block, &mut page).unwrap();
+                    }
+                    if testing_finished.load(std::sync::atomic::Ordering::Relaxed) {
+                        break;
+                    }
+                }
+            }))
+        }
+
+        let fm = file_manager.clone();
+        thread::spawn(move || {
+            for file_nr in 0..TEST_FILES_MAX {
+                let mut page = Page::new(TEST_FILES_BLOCKSIZE);
+                page.set_i32(0, file_nr as i32);
+                let fname = format!("testfile_write_{}", file_nr);
+                let block = BlockId::new(fname.as_str(), 0);
+                println!("write to file_nr: {}", file_nr);
+                fm.write(&block, &mut page).unwrap();
+            }
+        })
+        .join()
+        .unwrap();
+
+        let fm = file_manager.clone();
+        for file_nr in 0..TEST_FILES_MAX {
+            let mut page = Page::new(TEST_FILES_BLOCKSIZE);
+            let fname = format!("testfile_write_{}", file_nr);
+            let block = BlockId::new(fname.as_str(), 0);
+            fm.read(&block, &mut page).unwrap();
+            let file_nr_got = page.get_i32(0);
+            assert_eq!(file_nr_got, file_nr as i32);
+        }
+
+        testing_finished.store(true, std::sync::atomic::Ordering::Relaxed);
+
+        let mut thread_nr = 0;
+        for t in parallel_read_threads_some_files {
+            println!("Stop read thread {thread_nr:?}");
+            t.join().unwrap();
+            thread_nr += 1;
+        }
     }
 }

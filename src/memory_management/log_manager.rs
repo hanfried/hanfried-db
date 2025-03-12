@@ -1,5 +1,5 @@
 use crate::file_management::block_id::BlockId;
-use crate::file_management::file_manager::FileManager;
+use crate::file_management::file_manager::{FileManager, IoError};
 use crate::file_management::page::Page;
 use log::debug;
 use std::cell::RefCell;
@@ -28,7 +28,7 @@ impl Display for LogSequenceNumber {
 
 #[derive(Debug)]
 pub struct LogManager<'a> {
-    file_manager: Rc<RefCell<FileManager<'a>>>,
+    file_manager: Rc<RefCell<FileManager>>,
     log_file: &'a str,
     log_page: Page,
     current_block: BlockId<'a>,
@@ -38,9 +38,9 @@ pub struct LogManager<'a> {
 
 impl<'a> LogManager<'a> {
     pub fn new(
-        file_manager: Rc<RefCell<FileManager<'a>>>,
+        file_manager: Rc<RefCell<FileManager>>,
         log_file: &'a str,
-    ) -> Result<LogManager<'a>, std::io::Error> {
+    ) -> Result<LogManager<'a>, IoError> {
         debug!(
             "Create new log manager, file_manager={:?}, log_file={:?}",
             file_manager, log_file
@@ -71,9 +71,9 @@ impl<'a> LogManager<'a> {
 
     fn append_new_block(
         log_file: &'a str,
-        fm: &mut FileManager<'a>,
+        fm: &mut FileManager,
         log_page: &mut Page,
-    ) -> Result<BlockId<'a>, std::io::Error> {
+    ) -> Result<BlockId<'a>, IoError> {
         let block_id = fm.append(log_file)?;
         log_page.set_i32(0, usize::from(fm.block_size) as i32);
         fm.write(&block_id, log_page)?;
@@ -84,14 +84,14 @@ impl<'a> LogManager<'a> {
         Ok(block_id)
     }
 
-    pub fn flush(&mut self, log_sequence_number: LogSequenceNumber) -> Result<(), std::io::Error> {
+    pub fn flush(&mut self, log_sequence_number: LogSequenceNumber) -> Result<(), IoError> {
         if log_sequence_number >= self.log_sequence_number_last_saved {
             self._flush()?;
         }
         Ok(())
     }
 
-    fn _flush(&mut self) -> Result<(), std::io::Error> {
+    fn _flush(&mut self) -> Result<(), IoError> {
         let mut fm_binding = self.file_manager.borrow_mut();
         let fm = fm_binding.deref_mut();
         fm.write(&self.current_block, &self.log_page)?;
@@ -99,7 +99,7 @@ impl<'a> LogManager<'a> {
         Ok(())
     }
 
-    pub fn append(&mut self, log_record: &[u8]) -> Result<LogSequenceNumber, std::io::Error> {
+    pub fn append(&mut self, log_record: &[u8]) -> Result<LogSequenceNumber, IoError> {
         let mut boundary = self.log_page.get_i32(0);
         let record_size = log_record.len();
         let bytes_needed = record_size + 4;
@@ -119,7 +119,7 @@ impl<'a> LogManager<'a> {
         Ok(self.log_sequence_number_latest)
     }
 
-    pub fn iter(&self) -> Result<LogManagerIter<'a>, std::io::Error> {
+    pub fn iter(&self) -> Result<LogManagerIter<'a>, IoError> {
         let fm = self.file_manager.borrow_mut();
         let mut page = Page::new(fm.block_size);
         fm.read(&self.current_block, &mut page)?;
@@ -136,7 +136,7 @@ impl<'a> LogManager<'a> {
 }
 
 pub struct LogManagerIter<'a> {
-    file_manager: Rc<RefCell<FileManager<'a>>>,
+    file_manager: Rc<RefCell<FileManager>>,
     block: BlockId<'a>,
     // page: Rc<RefCell<Page>>,
     page: Page,
@@ -145,7 +145,7 @@ pub struct LogManagerIter<'a> {
 }
 
 impl Iterator for LogManagerIter<'_> {
-    type Item = Result<Vec<u8>, std::io::Error>;
+    type Item = Result<Vec<u8>, IoError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let block_size = self.file_manager.borrow().block_size;
@@ -172,12 +172,12 @@ impl Iterator for LogManagerIter<'_> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::file_management::file_manager::FileManagerBuilder;
-    use crate::memory_management::log_manager::LogManager;
-
-    // fn test_log_manager() {
-    //     let file_manager = FileManagerBuilder::new()
-    // }
-}
+// #[cfg(test)]
+// mod tests {
+//     use crate::file_management::file_manager::FileManagerBuilder;
+//     use crate::memory_management::log_manager::LogManager;
+//
+//     // fn test_log_manager() {
+//     //     let file_manager = FileManagerBuilder::new()
+//     // }
+// }
