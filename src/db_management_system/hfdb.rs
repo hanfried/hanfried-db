@@ -3,14 +3,13 @@ use crate::file_management::file_manager::{FileManager, IoError};
 use crate::memory_management::buffer_manager::BufferManager;
 use crate::memory_management::log_manager::LogManager;
 use std::num::NonZeroUsize;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[derive(Debug)]
 pub struct HanfriedDb {
-    pub file_manager: Arc<FileManager>,
-    pub log_manager: Arc<Mutex<LogManager>>,
-    pub buffer_manager: Arc<BufferManager>,
+    pub file_manager: FileManager,
+    pub log_manager: LogManager,
+    pub buffer_manager: BufferManager,
 }
 
 impl HanfriedDb {
@@ -27,20 +26,12 @@ impl HanfriedDb {
             NonZeroUsize::new(max_open_files).unwrap(),
         )
         .unwrap();
-        let lm = Arc::new(Mutex::new(LogManager::new(
-            fm.clone(),
-            &DbFilename::from(log_file),
-        )?));
-        let bm = Arc::new(BufferManager::new(
-            Arc::new(fm.clone()),
-            lm.clone(),
-            pool_size,
-            Duration::from_secs(10),
-        ));
+        let lm = LogManager::new(&fm, &DbFilename::from(log_file))?;
+        let bm = BufferManager::new(&fm, &lm, pool_size, Duration::from_secs(10));
         Ok(Self {
-            file_manager: Arc::new(fm.clone()),
-            log_manager: lm.clone(),
-            buffer_manager: bm.clone(),
+            file_manager: fm,
+            log_manager: lm,
+            buffer_manager: bm,
         })
     }
 }

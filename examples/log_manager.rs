@@ -4,7 +4,6 @@ use hanfried_db::memory_management::log_manager::{LogManager, LogSequenceNumber}
 use hanfried_db::utils::logging::init_logging;
 use log::info;
 use std::num::NonZeroUsize;
-use std::ops::DerefMut;
 
 fn create_log_record(s: &str, n: i32) -> Vec<u8> {
     let n_pos = s.len() + 4;
@@ -14,7 +13,7 @@ fn create_log_record(s: &str, n: i32) -> Vec<u8> {
     p.get_contents().to_vec()
 }
 
-fn create_records(log_manager: &mut LogManager, start: i32, end: i32) {
+fn create_records(log_manager: &LogManager, start: i32, end: i32) {
     info!("Creating records start: {}, end: {}", start, end);
     for i in start..end + 1 {
         let log_record = create_log_record(format!("record{}", i).as_str(), i + 100);
@@ -52,21 +51,17 @@ fn main() {
     .unwrap();
     println!("{hanfried_db:?}");
 
-    // let file_manager = hanfried_db.file_manager;
-    // let mut lm_binding = hanfried_db.log_manager.borrow_mut();
-    // let lm = lm_binding.deref_mut();
-    let mut lm_binding = hanfried_db.log_manager.lock().unwrap();
-    let lm = lm_binding.deref_mut();
+    let lm = hanfried_db.log_manager;
 
-    create_records(lm, 1, 35);
+    create_records(&lm, 1, 35);
     println!("{lm:?}");
 
-    print_log_records(lm, "The log file now has these records: ");
-    create_records(lm, 36, 70);
+    print_log_records(&lm, "The log file now has these records: ");
+    create_records(&lm, 36, 70);
 
     lm.flush(LogSequenceNumber::from(65)).unwrap();
     print_log_records(
-        lm,
+        &lm,
         "The log file has now these records after flushing to 65.",
     );
 }

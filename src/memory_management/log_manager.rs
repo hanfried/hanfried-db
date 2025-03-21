@@ -45,7 +45,7 @@ pub struct LogManager {
 }
 
 impl LogManager {
-    pub fn new(file_manager: FileManager, log_file: &DbFilename) -> Result<LogManager, IoError> {
+    pub fn new(file_manager: &FileManager, log_file: &DbFilename) -> Result<LogManager, IoError> {
         debug!(
             "Create new log manager, file_manager={:?}, log_file={:?}",
             file_manager, log_file
@@ -64,7 +64,7 @@ impl LogManager {
         };
 
         let log_manager = LogManager {
-            file_manager,
+            file_manager: file_manager.clone(),
             log_file: log_file.clone(),
             head: Arc::new(Mutex::new(LogHead {
                 page: log_page,
@@ -306,7 +306,7 @@ mod tests {
     fn test_log_manager() {
         let file_manager = FileManagerBuilder::unittest("log_manager").build().unwrap();
         let log_manager =
-            LogManager::new(file_manager, &DbFilename::from("test_log_manager.log")).unwrap();
+            LogManager::new(&file_manager, &DbFilename::from("test_log_manager.log")).unwrap();
         // 0 .. 1
         // 1 .. 2
         // 2 .. 4

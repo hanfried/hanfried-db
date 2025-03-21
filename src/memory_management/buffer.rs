@@ -5,7 +5,6 @@ use crate::memory_management::log_manager::{LogManager, LogSequenceNumber};
 use log::debug;
 use std::fmt::Display;
 use std::num::NonZeroUsize;
-use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct TransactionNumber(NonZeroUsize);
@@ -18,8 +17,8 @@ impl TransactionNumber {
 
 #[derive(Debug)]
 pub struct Buffer {
-    file_manager: Arc<FileManager>,
-    log_manager: Arc<Mutex<LogManager>>,
+    file_manager: FileManager,
+    log_manager: LogManager,
     contents: Page,
     block: Option<BlockId>,
     pins_count: usize,
@@ -38,10 +37,10 @@ impl Display for Buffer {
 }
 
 impl Buffer {
-    pub fn new(file_manager: Arc<FileManager>, log_manager: Arc<Mutex<LogManager>>) -> Buffer {
+    pub fn new(file_manager: &FileManager, log_manager: &LogManager) -> Buffer {
         Buffer {
             file_manager: file_manager.clone(),
-            log_manager,
+            log_manager: log_manager.clone(),
             contents: Page::new(file_manager.block_size),
             block: None,
             pins_count: 0,
@@ -112,7 +111,7 @@ impl Buffer {
         if self.transaction_number.is_some() {
             debug!("Buffer: Flush {}", self);
             if let Some(lsn) = self.log_sequence_number {
-                self.log_manager.lock().unwrap().flush(lsn)?;
+                self.log_manager.flush(lsn)?;
             }
             self.file_manager
                 .write(&self.block().unwrap(), &self.contents)?;

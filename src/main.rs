@@ -24,11 +24,10 @@ fn main() {
     .unwrap();
     info!("HanfriedDB {hanfried_db:?}");
 
-    let buffer_manager = hanfried_db.buffer_manager;
+    let bm = hanfried_db.buffer_manager;
     // let mut bm_binding = buffer_manager.clone();
     // let bm = bm_binding.deref_mut();
-    let bm = buffer_manager.clone();
-    debug!("buffer_manager {:?}", buffer_manager);
+    debug!("buffer_manager {:?}", bm);
     let fname = DbFilename::from("testfile");
     let block1 = BlockId::new(fname, 1);
     let buffer1_pin = bm.pin(block1.clone());

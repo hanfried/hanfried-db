@@ -4,7 +4,7 @@ use crate::memory_management::buffer::{Buffer, TransactionNumber};
 use crate::memory_management::buffer_manager::BufferManagerError::{DeadLockTimeout, NoCapacity};
 use crate::memory_management::log_manager::LogManager;
 use log::{debug, warn};
-use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::sync::{Condvar, Mutex, RwLock};
 use std::time::Duration;
 
 #[derive(Debug)]
@@ -18,17 +18,14 @@ pub struct BufferManager {
 #[allow(elided_named_lifetimes)]
 impl BufferManager {
     pub fn new(
-        file_manager: Arc<FileManager>,
-        log_manager: Arc<Mutex<LogManager>>,
+        file_manager: &FileManager,
+        log_manager: &LogManager,
         pool_size: usize,
         deadlock_waiting_duration: Duration,
     ) -> BufferManager {
         let mut pool: Vec<RwLock<Buffer>> = Vec::with_capacity(pool_size);
         for _ in 0..pool_size {
-            pool.push(RwLock::new(Buffer::new(
-                file_manager.clone(),
-                log_manager.clone(),
-            )))
+            pool.push(RwLock::new(Buffer::new(file_manager, log_manager)))
         }
         BufferManager {
             pool,
