@@ -1,4 +1,4 @@
-use crate::file_management::block_id::BlockId;
+use crate::file_management::block_id::{BlockId, DbFilename};
 use crate::file_management::page::Page;
 use crate::utils::sync_resource_cache::SyncResourceCache;
 use log::info;
@@ -121,14 +121,14 @@ impl FileManager {
         })
     }
 
-    fn get_file(&self, filename: &str) -> Result<Arc<Mutex<File>>, IoError> {
+    fn get_file(&self, filename: &DbFilename) -> Result<Arc<Mutex<File>>, IoError> {
         self.file_cache.get_or_create(filename.to_string(), || {
             let f = OpenOptions::new()
                 .read(true)
                 .write(true)
                 .create(true)
                 .truncate(false)
-                .open(Path::new(self.db_directory.as_str()).join(filename))
+                .open(Path::new(self.db_directory.as_str()).join(filename.as_str()))
                 .map_err(|error| IoError {
                     error,
                     context: format!("get_file open file {}", filename),
@@ -142,11 +142,11 @@ impl FileManager {
     }
 
     pub fn read(&self, block: &BlockId, page: &mut Page) -> Result<(), IoError> {
-        let file_binding = self.get_file(block.filename.as_str())?;
+        let file_binding = self.get_file(block.filename())?;
         let mut file = file_binding.lock().unwrap();
         let block_size = self.block_size;
         let seek_from =
-            std::io::SeekFrom::Start((block.block_number * usize::from(block_size)) as u64);
+            std::io::SeekFrom::Start((block.block_number() * usize::from(block_size)) as u64);
         file.seek(seek_from).map_err(|error| IoError {
             error,
             context: format!("read seek file block {:?}", block),
@@ -158,11 +158,11 @@ impl FileManager {
     }
 
     pub fn write(&self, block: &BlockId, page: &Page) -> Result<(), IoError> {
-        let file_binding = self.get_file(block.filename.as_str())?;
+        let file_binding = self.get_file(block.filename())?;
         let mut file = file_binding.lock().unwrap();
         // println!("Locked file {:?} {:?}", block, file);
         let seek_from =
-            std::io::SeekFrom::Start((block.block_number * usize::from(self.block_size)) as u64);
+            std::io::SeekFrom::Start((block.block_number() * usize::from(self.block_size)) as u64);
         file.seek(seek_from).map_err(|error| IoError {
             error,
             context: format!("write seek file block {:?}", block),
@@ -179,7 +179,7 @@ impl FileManager {
         Ok(())
     }
 
-    pub fn block_length(&self, filename: &str) -> Result<usize, IoError> {
+    pub fn block_length(&self, filename: &DbFilename) -> Result<usize, IoError> {
         // let mut file = self.get_file(filename)?;
         let file_binding = self.get_file(filename).unwrap();
         let mut file = file_binding.lock().unwrap();
@@ -194,18 +194,18 @@ impl FileManager {
         Ok(eof_offset as usize / self.block_size)
     }
 
-    pub fn append(&self, filename: &str) -> Result<BlockId, IoError> {
+    pub fn append(&self, filename: &DbFilename) -> Result<BlockId, IoError> {
         let file_binding = self.get_file(filename).unwrap();
         let mut file = file_binding.lock().unwrap();
         let block = BlockId::new(
-            filename,
+            filename.clone(),
             self._block_length(&mut file).map_err(|error| IoError {
                 error,
                 context: format!("append block length filename {}", filename),
             })?,
         );
         let seek_from =
-            std::io::SeekFrom::Start((block.block_number * usize::from(self.block_size)) as u64);
+            std::io::SeekFrom::Start((block.block_number() * usize::from(self.block_size)) as u64);
         file.seek(seek_from).map_err(|error| IoError {
             error,
             context: format!("block length {}", filename),
@@ -216,7 +216,7 @@ impl FileManager {
 
 #[cfg(test)]
 mod tests {
-    use crate::file_management::block_id::BlockId;
+    use crate::file_management::block_id::{BlockId, DbFilename};
     use crate::file_management::file_manager::FileManagerBuilder;
     use crate::file_management::page::Page;
     use std::num::NonZeroUsize;
@@ -241,10 +241,10 @@ mod tests {
         let mut parallel_write_threads: Vec<JoinHandle<()>> = Vec::new();
         for file_nr in 0..TEST_FILES_MAX {
             for block_nr in 0..TEST_FILES_BLOCKS {
-                let fname = format!("testfile_{}", file_nr);
+                let fname = DbFilename::from(format!("testfile_{}", file_nr));
                 let fm = file_manager.clone();
                 parallel_write_threads.push(thread::spawn(move || {
-                    let block = BlockId::new(fname.as_str(), block_nr);
+                    let block = BlockId::new(fname, block_nr);
                     let mut page = Page::new(TEST_FILES_BLOCKSIZE);
                     page.set_i32(0, file_nr as i32);
                     page.set_i32(4, block_nr as i32);
@@ -255,10 +255,10 @@ mod tests {
         let mut parallel_read_threads: Vec<JoinHandle<()>> = Vec::new();
         for file_nr in 0..TEST_FILES_MAX {
             for block_nr in 0..TEST_FILES_BLOCKS {
-                let fname = format!("testfile_{}", file_nr);
+                let fname = DbFilename::from(format!("testfile_{}", file_nr));
                 let fm = file_manager.clone();
                 parallel_read_threads.push(thread::spawn(move || {
-                    let block = BlockId::new(fname.as_str(), block_nr);
+                    let block = BlockId::new(fname, block_nr);
                     let mut page = Page::new(TEST_FILES_BLOCKSIZE);
                     loop {
                         fm.read(&block, &mut page).unwrap();
@@ -309,8 +309,8 @@ mod tests {
                 loop {
                     let mut page = Page::new(TEST_FILES_BLOCKSIZE);
                     for file_nr in 0..TEST_FILES_SOME {
-                        let fname = format!("testfile_{}", file_nr);
-                        let block = BlockId::new(fname.as_str(), 0);
+                        let fname = DbFilename::from(format!("testfile_{}", file_nr));
+                        let block = BlockId::new(fname, 0);
                         fm.read(&block, &mut page).unwrap();
                     }
                     if testing_finished.load(std::sync::atomic::Ordering::Relaxed) {
@@ -325,8 +325,8 @@ mod tests {
             for file_nr in 0..TEST_FILES_MAX {
                 let mut page = Page::new(TEST_FILES_BLOCKSIZE);
                 page.set_i32(0, file_nr as i32);
-                let fname = format!("testfile_write_{}", file_nr);
-                let block = BlockId::new(fname.as_str(), 0);
+                let fname = DbFilename::from(format!("testfile_write_{}", file_nr));
+                let block = BlockId::new(fname, 0);
                 println!("write to file_nr: {}", file_nr);
                 fm.write(&block, &mut page).unwrap();
             }
@@ -337,8 +337,8 @@ mod tests {
         let fm = file_manager.clone();
         for file_nr in 0..TEST_FILES_MAX {
             let mut page = Page::new(TEST_FILES_BLOCKSIZE);
-            let fname = format!("testfile_write_{}", file_nr);
-            let block = BlockId::new(fname.as_str(), 0);
+            let fname = DbFilename::from(format!("testfile_write_{}", file_nr));
+            let block = BlockId::new(fname, 0);
             fm.read(&block, &mut page).unwrap();
             let file_nr_got = page.get_i32(0);
             assert_eq!(file_nr_got, file_nr as i32);

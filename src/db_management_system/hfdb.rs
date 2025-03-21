@@ -1,3 +1,4 @@
+use crate::file_management::block_id::DbFilename;
 use crate::file_management::file_manager::{FileManager, IoError};
 use crate::memory_management::buffer_manager::BufferManager;
 use crate::memory_management::log_manager::LogManager;
@@ -27,7 +28,7 @@ impl HanfriedDb {
         )?);
         let lm = Arc::new(Mutex::new(LogManager::new(
             fm.clone(),
-            log_file.to_string(),
+            &DbFilename::from(log_file),
         )?));
         let bm = Arc::new(BufferManager::new(
             fm.clone(),

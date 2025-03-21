@@ -1,4 +1,4 @@
-use hanfried_db::file_management::block_id::BlockId;
+use hanfried_db::file_management::block_id::{BlockId, DbFilename};
 use hanfried_db::file_management::file_manager::FileManager;
 use hanfried_db::file_management::page::Page;
 use hanfried_db::utils;
@@ -16,10 +16,9 @@ fn main() {
     .unwrap();
     println!("{file_manager:?}");
 
-    let block = BlockId {
-        filename: "testfile".to_string(),
-        block_number: 2,
-    };
+    let fname = DbFilename::from("testfile");
+
+    let block = BlockId::new(fname.clone(), 2);
     println!("{block:?}");
 
     let mut page1 = Page::new(block_size);
@@ -40,6 +39,6 @@ fn main() {
     let i = page2.get_i32(pos_int);
     println!("{page2:?} {s:?} {i:?}");
 
-    let appended_block: BlockId = file_manager.append("testfile").unwrap();
+    let appended_block: BlockId = file_manager.append(&fname).unwrap();
     println!("appended_block: {appended_block:?}");
 }

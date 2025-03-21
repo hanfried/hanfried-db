@@ -1,4 +1,4 @@
-use crate::file_management::block_id::BlockId;
+use crate::file_management::block_id::{BlockId, DbFilename};
 use crate::file_management::file_manager::{FileManager, IoError};
 use crate::file_management::page::Page;
 use log::debug;
@@ -40,7 +40,7 @@ struct LogHead {
 #[derive(Debug, Clone)]
 pub struct LogManager {
     file_manager: Arc<FileManager>,
-    log_file: String,
+    log_file: DbFilename,
     head: Arc<Mutex<LogHead>>,
     // log_page: Page,
     // current_block: BlockId<'a>,
@@ -48,7 +48,10 @@ pub struct LogManager {
 }
 
 impl LogManager {
-    pub fn new(file_manager: Arc<FileManager>, log_file: String) -> Result<LogManager, IoError> {
+    pub fn new(
+        file_manager: Arc<FileManager>,
+        log_file: &DbFilename,
+    ) -> Result<LogManager, IoError> {
         debug!(
             "Create new log manager, file_manager={:?}, log_file={:?}",
             file_manager, log_file
@@ -57,10 +60,10 @@ impl LogManager {
         // let fm = fm_binding.deref_mut();
         let fm = file_manager.clone();
         let mut log_page = Page::new(fm.block_size);
-        let current_block: BlockId = match fm.block_length(log_file.as_str())? {
-            0 => Self::append_new_block(log_file.as_str(), fm, &mut log_page)?,
+        let current_block: BlockId = match fm.block_length(log_file)? {
+            0 => Self::append_new_block(log_file, fm, &mut log_page)?,
             log_size => {
-                let block_id = BlockId::new(log_file.as_str(), log_size - 1);
+                let block_id = BlockId::new(log_file.clone(), log_size - 1);
                 fm.read(&block_id, &mut log_page)?;
                 block_id
             }
@@ -68,7 +71,7 @@ impl LogManager {
 
         let log_manager = LogManager {
             file_manager,
-            log_file: log_file.to_string(),
+            log_file: log_file.clone(),
             head: Arc::new(Mutex::new(LogHead {
                 page: log_page,
                 block: current_block,
@@ -83,7 +86,7 @@ impl LogManager {
     }
 
     fn append_new_block(
-        log_file: &str,
+        log_file: &DbFilename,
         fm: Arc<FileManager>,
         log_page: &mut Page,
     ) -> Result<BlockId, IoError> {
@@ -124,11 +127,8 @@ impl LogManager {
         let bytes_needed = record_size + 4;
         if (boundary as usize) < bytes_needed + 4 {
             self._flush(&mut head)?;
-            head.block = Self::append_new_block(
-                self.log_file.as_str(),
-                self.file_manager.clone(),
-                &mut head.page,
-            )?;
+            head.block =
+                Self::append_new_block(&self.log_file, self.file_manager.clone(), &mut head.page)?;
             boundary = head.page.get_i32(0);
         }
         let record_pos = boundary - bytes_needed as i32;
@@ -171,12 +171,14 @@ impl Iterator for LogManagerIter {
     fn next(&mut self) -> Option<Self::Item> {
         let block_size = self.file_manager.block_size;
         let has_next =
-            (self.pos_current < usize::from(block_size)) || (self.block.block_number > 0);
+            (self.pos_current < usize::from(block_size)) || (self.block.block_number() > 0);
         if !has_next {
             return None;
         };
         if self.pos_current == usize::from(block_size) {
-            self.block = BlockId::new(self.block.filename.as_str(), self.block.block_number - 1);
+            self.block = self
+                .block
+                .with_other_block_number(self.block.block_number() - 1);
             if let Err(read_block_result) = self.file_manager.read(&self.block, &mut self.page) {
                 return Some(Err(read_block_result));
             }
@@ -191,7 +193,8 @@ impl Iterator for LogManagerIter {
 
 #[cfg(test)]
 mod tests {
-    use crate::file_management::file_manager::{FileManagerBuilder, IoError};
+    use crate::file_management::block_id::DbFilename;
+    use crate::file_management::file_manager::FileManagerBuilder;
     use crate::file_management::page::Page;
     use crate::memory_management::log_manager::{LogManager, LogPosition, LogSequenceNumber};
     use std::num::NonZeroUsize;
@@ -273,7 +276,7 @@ mod tests {
             log_records.len(),
             last_saved
         );
-        for record_nr in (0..start) {
+        for record_nr in 0..start {
             let s = format!("record{}", record_nr);
             assert!(
                 log_records.contains(&(s, (record_nr + 100) as i32)),
@@ -295,7 +298,7 @@ mod tests {
             log_records.len(),
             end
         );
-        for record_nr in (0..end) {
+        for record_nr in 0..end {
             let s = format!("record{}", record_nr);
             assert!(
                 log_records.contains(&(s, record_nr + 100)),
@@ -304,15 +307,16 @@ mod tests {
                 log_records
             );
         }
-        // Todo as well: Change the file_name: String implementation with cloning everywhere
-        // especially in Block maybe to an Arc<String>
     }
 
     #[test]
     fn test_log_manager() {
         let file_manager = Arc::new(FileManagerBuilder::unittest("log_manager").build().unwrap());
-        let log_manager =
-            LogManager::new(file_manager.clone(), "test_log_manager.log".to_string()).unwrap();
+        let log_manager = LogManager::new(
+            file_manager.clone(),
+            &DbFilename::from("test_log_manager.log"),
+        )
+        .unwrap();
         // 0 .. 1
         // 1 .. 2
         // 2 .. 4

@@ -1,5 +1,5 @@
 use hanfried_db::db_management_system::hfdb::HanfriedDb;
-use hanfried_db::file_management::block_id::BlockId;
+use hanfried_db::file_management::block_id::{BlockId, DbFilename};
 use hanfried_db::file_management::page::Page;
 use hanfried_db::memory_management::buffer::TransactionNumber;
 use hanfried_db::memory_management::log_manager::LogSequenceNumber;
@@ -29,7 +29,8 @@ fn main() {
     // let bm = bm_binding.deref_mut();
     let bm = buffer_manager.clone();
     debug!("buffer_manager {:?}", buffer_manager);
-    let block1 = BlockId::new("testfile", 1);
+    let fname = DbFilename::from("testfile");
+    let block1 = BlockId::new(fname, 1);
     let buffer1_pin = bm.pin(block1.clone());
     {
         let mut buffer1_binding = buffer1_pin.unwrap().write().unwrap();
@@ -41,9 +42,9 @@ fn main() {
         buffer1_binding.unpin();
     }
 
-    let _buffer2_pin = bm.pin(BlockId::new("testfile", 2));
-    let _buffer3_pin = bm.pin(BlockId::new("testfile", 3));
-    let _buffer4_pin = bm.pin(BlockId::new("testfile", 4));
+    let _buffer2_pin = bm.pin(block1.with_other_block_number(2));
+    let _buffer3_pin = bm.pin(block1.with_other_block_number(3));
+    let _buffer4_pin = bm.pin(block1.with_other_block_number(4));
 
     // let file_manager = hanfried_db.file_manager;
     // let fm_binding = file_manager.borrow();
