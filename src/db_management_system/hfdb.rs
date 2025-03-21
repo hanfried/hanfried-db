@@ -21,23 +21,24 @@ impl HanfriedDb {
         pool_size: usize,
         max_open_files: usize,
     ) -> Result<Self, IoError> {
-        let fm = Arc::new(FileManager::new(
+        let fm = FileManager::new(
             db_directory,
             NonZeroUsize::new(block_size).unwrap(),
             NonZeroUsize::new(max_open_files).unwrap(),
-        )?);
+        )
+        .unwrap();
         let lm = Arc::new(Mutex::new(LogManager::new(
             fm.clone(),
             &DbFilename::from(log_file),
         )?));
         let bm = Arc::new(BufferManager::new(
-            fm.clone(),
+            Arc::new(fm.clone()),
             lm.clone(),
             pool_size,
             Duration::from_secs(10),
         ));
         Ok(Self {
-            file_manager: fm.clone(),
+            file_manager: Arc::new(fm.clone()),
             log_manager: lm.clone(),
             buffer_manager: bm.clone(),
         })
