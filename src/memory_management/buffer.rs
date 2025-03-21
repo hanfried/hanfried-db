@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use crate::file_management::block_id::BlockId;
 use crate::file_management::file_manager::{FileManager, IoError};
 use crate::file_management::page::Page;
@@ -5,21 +6,22 @@ use crate::memory_management::log_manager::{LogManager, LogSequenceNumber};
 use log::debug;
 use std::fmt::Display;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct TransactionNumber(NonZeroUsize);
 
-impl TransactionNumber {
-    pub fn from(nr: u64) -> Self {
+impl From<u64> for TransactionNumber {
+    fn from(nr: u64) -> Self {
         TransactionNumber(NonZeroUsize::new(nr as usize).unwrap())
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Buffer {
     file_manager: FileManager,
     log_manager: LogManager,
-    contents: Page,
+    contents: Arc<Page>,
     block: Option<BlockId>,
     pins_count: usize,
     transaction_number: Option<TransactionNumber>,
@@ -41,7 +43,7 @@ impl Buffer {
         Buffer {
             file_manager: file_manager.clone(),
             log_manager: log_manager.clone(),
-            contents: Page::new(file_manager.block_size),
+            contents: Arc::new(Page::new(file_manager.block_size)),
             block: None,
             pins_count: 0,
             transaction_number: None,
@@ -51,10 +53,6 @@ impl Buffer {
 
     pub fn contents(&self) -> &Page {
         &self.contents
-    }
-
-    pub fn contents_mut(&mut self) -> &mut Page {
-        &mut self.contents
     }
 
     pub fn block(&self) -> Option<BlockId> {
@@ -97,7 +95,7 @@ impl Buffer {
             "Buffer: Assigning to block={:?}, read file_manager={:?} contents={:?}",
             &block_id, self.file_manager, self.contents
         );
-        self.file_manager.read(&block_id, &mut self.contents)?;
+        self.file_manager.read(&block_id, &self.contents)?;
         debug!(
             "Buffer: Assigning to block={:?}, set pins_count=0",
             &block_id
@@ -120,7 +118,6 @@ impl Buffer {
         Ok(())
     }
 
-    // TODO: maybe not public
     pub fn pin(&mut self) {
         self.pins_count += 1;
         debug!(
@@ -129,12 +126,31 @@ impl Buffer {
         );
     }
 
-    // TODO: maybe not public
     pub fn unpin(&mut self) {
         self.pins_count -= 1;
         debug!(
             "Buffer: Unpinned block {:?} new count {:?}",
             self.block, self.pins_count
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::num::NonZeroUsize;
+    use crate::file_management::block_id::DbFilename;
+    use crate::file_management::file_manager::FileManagerBuilder;
+    use crate::memory_management::buffer::Buffer;
+    use crate::memory_management::log_manager::LogManager;
+
+    #[test]
+    fn test_buffer_cloning() {
+        let file_manager = FileManagerBuilder::unittest("buffer_test_cloning").block_size(NonZeroUsize::new(100 as usize).unwrap()).build().unwrap();
+        let log_manager = LogManager::new(&file_manager, &DbFilename::from("test_buffer_cloning.log")).unwrap();
+        let mut buffer = Buffer::new(&file_manager, &log_manager);
+        let mut buffer_clone = buffer.clone();
+
+        buffer.contents().set_i32(0, 100);
+        assert_eq!(buffer.contents(), buffer_clone.contents());
     }
 }

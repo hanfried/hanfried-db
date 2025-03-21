@@ -141,7 +141,7 @@ impl FileManager {
         self.file_cache.len_open()
     }
 
-    pub fn read(&self, block: &BlockId, page: &mut Page) -> Result<(), IoError> {
+    pub fn read(&self, block: &BlockId, page: &Page) -> Result<(), IoError> {
         let file_binding = self.get_file(block.filename())?;
         let mut file = file_binding.lock().unwrap();
         let block_size = self.block_size;
@@ -167,7 +167,7 @@ impl FileManager {
             error,
             context: format!("write seek file block {:?}", block),
         })?;
-        file.write_all(page.get_contents())
+        file.write_all(page.get_contents().as_slice())
             .map_err(|error| IoError {
                 error,
                 context: format!("write write_all page contents file block {:?}", block),
