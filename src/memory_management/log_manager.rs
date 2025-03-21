@@ -191,7 +191,7 @@ impl Iterator for LogManagerIter {
 
 #[cfg(test)]
 mod tests {
-    use crate::file_management::file_manager::FileManagerBuilder;
+    use crate::file_management::file_manager::{FileManagerBuilder, IoError};
     use crate::file_management::page::Page;
     use crate::memory_management::log_manager::{LogManager, LogPosition, LogSequenceNumber};
     use std::num::NonZeroUsize;
@@ -204,6 +204,17 @@ mod tests {
         p.set_string(0, s);
         p.set_i32(n_pos, n);
         p.get_contents().to_vec()
+    }
+
+    fn get_log_records(lm: &LogManager) -> Vec<(String, i32)> {
+        let mut log_records: Vec<(String, i32)> = Vec::new();
+        for record in lm.iter().unwrap() {
+            let page = Page::from_vec(record.unwrap());
+            let s = page.get_string(0);
+            let val = page.get_i32(page.max_length(s));
+            log_records.push((s.to_string(), val));
+        }
+        log_records
     }
 
     fn assert_create_records_parallel(log_manager: LogManager, start: i32, end: i32) {
@@ -237,6 +248,64 @@ mod tests {
             .map(|nr| LogSequenceNumber::from(nr as u64).next())
             .collect::<Vec<_>>();
         assert_eq!(latest_positions_found_sorted, latest_positions_expected);
+
+        let last_saved = log_positions.iter().map(|p| p.last_saved.0).max().unwrap();
+
+        assert!(
+            last_saved >= start as usize,
+            "last_saved {} >= start {}",
+            last_saved,
+            start
+        );
+        assert!(
+            last_saved <= end as usize,
+            "last_saved {} <= end {}",
+            last_saved,
+            end
+        );
+
+        let log_records = get_log_records(&lm);
+
+        assert_eq!(
+            log_records.len(),
+            last_saved,
+            "before flush: log_records.len() {} == last_saved {}",
+            log_records.len(),
+            last_saved
+        );
+        for record_nr in (0..start) {
+            let s = format!("record{}", record_nr);
+            assert!(
+                log_records.contains(&(s, (record_nr + 100) as i32)),
+                "before flush: record_nr {} in log_records {:?}",
+                record_nr,
+                log_records
+            );
+        }
+
+        lm.flush(LogSequenceNumber::from(end as u64))
+            .expect("flush failed in assert_create_records_parallel");
+
+        let log_records = get_log_records(&lm);
+
+        assert_eq!(
+            log_records.len(),
+            end as usize,
+            "after flush: log_records.len() {} == end {}",
+            log_records.len(),
+            end
+        );
+        for record_nr in (0..end) {
+            let s = format!("record{}", record_nr);
+            assert!(
+                log_records.contains(&(s, record_nr + 100)),
+                "after flush: record_nr {} in log_records {:?}",
+                record_nr,
+                log_records
+            );
+        }
+        // Todo as well: Change the file_name: String implementation with cloning everywhere
+        // especially in Block maybe to an Arc<String>
     }
 
     #[test]
