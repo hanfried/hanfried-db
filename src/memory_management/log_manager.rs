@@ -207,7 +207,7 @@ mod tests {
         for record in lm.iter().unwrap() {
             let page = Page::from_vec(record.unwrap());
             let s = page.get_string(0);
-            let val = page.get_i32(page.max_length(s));
+            let val = page.get_i32(page.max_length(s.as_str()));
             log_records.push((s.to_string(), val));
         }
         log_records

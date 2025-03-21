@@ -110,7 +110,7 @@ mod tests {
         let block1 = block.clone();
         let t1 = thread::spawn(move || {
             let mut buffer = bm.pin(&block1.clone()).unwrap();
-            let page = buffer.contents_mut();
+            let page = buffer.page();
             let n = page.get_i32(80);
             page.set_i32(80, n+1);
             buffer.set_modified(TransactionNumber::from(1), None);
@@ -129,15 +129,15 @@ mod tests {
             .map(|buffer_result| buffer_result.unwrap())
             .collect::<Vec<_>>();
 
-        let mut page1 = Page::new(file_manager.block_size);
-        file_manager.read(&block, &mut page1).expect("Error reading block");
+        let page1 = Page::new(file_manager.block_size);
+        file_manager.read(&block, &page1).expect("Error reading block");
         let got_n_in_block_1 = page1.get_i32(80);
         assert_eq!(got_n_in_block_1, expected_n_in_block_1);
 
         buffer_manager.unpin(other_buffers.first().unwrap());
         let mut bm = buffer_manager.clone();
         let mut buffer = bm.pin(&block).unwrap();
-        let mut page = buffer.contents();
+        let mut page = buffer.page();
         page.set_i32(80, 9999);
         buffer.set_modified(TransactionNumber::from(1), None);
         buffer_manager.unpin(&buffer);

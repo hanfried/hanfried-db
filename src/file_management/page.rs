@@ -1,23 +1,23 @@
 use std::cell::RefCell;
 use std::num::NonZeroUsize;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Page {
-    byte_buffer: Mutex<Box<[u8]>>,
+    byte_buffer: Arc<Mutex<Box<[u8]>>>,
 }
 
 impl Page {
     pub fn new(block_size: NonZeroUsize) -> Self {
         Self {
             // byte_buffer: vec![0; usize::from(block_size)].into(),
-            byte_buffer: Mutex::new(vec![0; block_size.get()].into_boxed_slice()),
+            byte_buffer: Arc::new(Mutex::new(vec![0; block_size.get()].into_boxed_slice())),
         }
     }
 
     pub fn from_vec(buffer: Vec<u8>) -> Self {
         Page {
-            byte_buffer: Mutex::new(buffer.into_boxed_slice()),
+            byte_buffer: Arc::new(Mutex::new(buffer.into_boxed_slice())),
         }
     }
 

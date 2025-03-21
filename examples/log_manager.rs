@@ -29,7 +29,7 @@ fn print_log_records(log_manager: &LogManager, msg: &str) {
     for record in log_iterator {
         let page = Page::from_vec(record.unwrap());
         let s = page.get_string(0);
-        let val = page.get_i32(page.max_length(s));
+        let val = page.get_i32(page.max_length(s.as_str()));
         println!("[{s:?} {val:?}]");
     }
 }

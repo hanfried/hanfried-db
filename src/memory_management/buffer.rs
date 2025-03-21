@@ -21,7 +21,7 @@ impl From<u64> for TransactionNumber {
 pub struct Buffer {
     file_manager: FileManager,
     log_manager: LogManager,
-    contents: Arc<Page>,
+    page: Page,
     block: Option<BlockId>,
     pins_count: usize,
     transaction_number: Option<TransactionNumber>,
@@ -43,7 +43,7 @@ impl Buffer {
         Buffer {
             file_manager: file_manager.clone(),
             log_manager: log_manager.clone(),
-            contents: Arc::new(Page::new(file_manager.block_size)),
+            page: Page::new(file_manager.block_size),
             block: None,
             pins_count: 0,
             transaction_number: None,
@@ -51,8 +51,8 @@ impl Buffer {
         }
     }
 
-    pub fn contents(&self) -> &Page {
-        &self.contents
+    pub fn page(&self) -> &Page {
+        &self.page
     }
 
     pub fn block(&self) -> Option<BlockId> {
@@ -93,9 +93,9 @@ impl Buffer {
         self.block = Some(block_id.clone());
         debug!(
             "Buffer: Assigning to block={:?}, read file_manager={:?} contents={:?}",
-            &block_id, self.file_manager, self.contents
+            &block_id, self.file_manager, self.page
         );
-        self.file_manager.read(&block_id, &self.contents)?;
+        self.file_manager.read(&block_id, &self.page)?;
         debug!(
             "Buffer: Assigning to block={:?}, set pins_count=0",
             &block_id
@@ -112,7 +112,7 @@ impl Buffer {
                 self.log_manager.flush(lsn)?;
             }
             self.file_manager
-                .write(&self.block().unwrap(), &self.contents)?;
+                .write(&self.block().unwrap(), &self.page)?;
             self.transaction_number = None;
         }
         Ok(())
@@ -150,7 +150,7 @@ mod tests {
         let mut buffer = Buffer::new(&file_manager, &log_manager);
         let mut buffer_clone = buffer.clone();
 
-        buffer.contents().set_i32(0, 100);
-        assert_eq!(buffer.contents(), buffer_clone.contents());
+        buffer.page().set_i32(0, 100);
+        assert_eq!(buffer.page().get_contents(), buffer_clone.page().get_contents());
     }
 }
