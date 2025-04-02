@@ -1,20 +1,20 @@
-use std::fmt::{Display, Formatter};
 use crate::file_management::block_id::BlockId;
 use crate::file_management::file_manager::{FileManager, IoError};
 use crate::memory_management::buffer::{Buffer, TransactionNumber};
 use crate::memory_management::buffer_manager::BufferManagerError::{DeadLockTimeout, NoCapacity};
 use crate::memory_management::log_manager::LogManager;
 use log::{debug, warn};
-use std::sync::{Condvar, Mutex, RwLock};
+use std::fmt::{Display, Formatter};
+use std::ops::DerefMut;
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct BufferManager {
-    // pool: Vec<RwLock<Buffer>>,
     pool: Vec<Buffer>,
-    num_available: usize,
-    // buffer_available: Condvar,
-    // deadlock_waiting_duration: Duration,
+    num_available: Arc<Mutex<usize>>,
+    buffer_available: Arc<Condvar>,
+    deadlock_waiting_duration: Duration,
 }
 
 impl BufferManager {
@@ -30,58 +30,127 @@ impl BufferManager {
         }
         BufferManager {
             pool,
-            num_available: pool_size,
-        //     buffer_available: Condvar::new(),
-        //     deadlock_waiting_duration,
+            num_available: Arc::new(Mutex::new(pool_size)),
+            buffer_available: Arc::new(Condvar::new()),
+            deadlock_waiting_duration,
         }
     }
 
     pub fn num_available(&self) -> usize {
-        self.num_available
+        *self
+            .num_available
+            .lock()
+            .expect("failed to lock num_available in BufferManager:num_available")
     }
 
-    pub fn flush_all(&self, transaction_number: TransactionNumber) {
-        todo!()
+    pub fn flush_all(&self, transaction_number: TransactionNumber) -> Result<(), IoError> {
+        for buffer in self
+            .pool
+            .iter()
+            .filter(|buffer| buffer.modifying_transaction_number() == Some(transaction_number))
+        {
+            buffer.flush()?
+        }
+        Ok(())
     }
 
     pub fn unpin(&self, buffer: &Buffer) {
-        todo!()
+        let mut num_available_guard = self
+            .num_available
+            .lock()
+            .expect("Locking failed for num_available in BufferManager unpine");
+        let num_available = num_available_guard.deref_mut();
+        debug!(
+            "Unpin buffer: {:?} num_available_before={}",
+            buffer, num_available
+        );
+        buffer.decrement_pins_count();
+        *num_available += 1;
+        debug!(
+            "Unpinned buffer (notify other threads): {:?} num_available_after={}",
+            buffer, num_available
+        );
+        self.buffer_available.notify_one();
     }
 
-    pub fn pin(&mut self, block_id: &BlockId) -> Result<Buffer, BufferManagerError>{
+    pub fn pin(&mut self, block_id: &BlockId) -> Result<Buffer, BufferManagerError> {
         self.try_to_pin(block_id)
     }
 
     fn try_to_pin(&mut self, block_id: &BlockId) -> Result<Buffer, BufferManagerError> {
-        let existing_buffer = self.pool.iter_mut().find(|buffer| buffer.block() == Some(block_id.clone()));
-        debug!("try to pin: existing_buffer: {:?} for block_id {:?}", existing_buffer, block_id);
-        let mut buffer = match existing_buffer {
+        let existing_buffer = self
+            .pool
+            .iter_mut()
+            .find(|buffer| buffer.block() == Some(block_id.clone()));
+        debug!(
+            "try to pin: existing_buffer: {:?} for block_id {:?}",
+            existing_buffer, block_id
+        );
+        let buffer = match existing_buffer {
             Some(buffer) => buffer.clone(),
             None => {
-                let mut buffer = self.choose_unpinned_buffer().unwrap();
-                buffer.assign_to_block(block_id.clone()).map_err(|e| BufferManagerError::StdIoError(e))?;
-                buffer.clone()
+                let mut buffer = self.choose_unpinned_buffer()?;
+                buffer
+                    .assign_to_block(block_id.clone())
+                    .map_err(BufferManagerError::StdIoError)?;
+                buffer
             }
         };
+        debug!(
+            "Now pin buffer: {:?} num_available={}",
+            buffer,
+            self.num_available.lock().unwrap()
+        );
         if buffer.is_not_pinned() {
-            self.num_available -= 1;
+            let mut num_available_guard = self
+                .num_available
+                .lock()
+                .expect("Locking failed for num_available in BufferManager try_to_pin");
+            let num_available = num_available_guard.deref_mut();
+            debug!(
+                "Decrement num_available={}, buffer={:?}",
+                num_available, buffer
+            );
+            *num_available -= 1;
         }
-        buffer.pin();
+        buffer.increment_pins_count();
         Ok(buffer)
     }
 
-    fn choose_unpinned_buffer(&mut self) -> Result<Buffer, BufferManagerError> {
+    fn choose_unpinned_buffer(&self) -> Result<Buffer, BufferManagerError> {
         let unpinned_buffer = self.pool.iter().find(|buffer| buffer.is_not_pinned());
-        debug!("Choosing unpinned buffer: {:?}", unpinned_buffer);
-        Ok(unpinned_buffer.unwrap().clone())
+        debug!(
+            "Choosing unpinned buffer: block {:?} details={:?}",
+            unpinned_buffer.unwrap().block(),
+            unpinned_buffer
+        );
+        match unpinned_buffer {
+            Some(buffer) => Ok(buffer.clone()),
+            None => {
+                debug!(
+                    "No unpinned buffer available, wait at most {:?} to get some unpinned",
+                    self.deadlock_waiting_duration
+                );
+                let waiting_result = self.buffer_available.wait_timeout(
+                    self.num_available
+                        .lock()
+                        .expect("Locking num_available in BufferManager choose_unpinned_buffer"),
+                    self.deadlock_waiting_duration,
+                );
+                match waiting_result {
+                    Ok(_) => self.choose_unpinned_buffer(),
+                    Err(_) => {
+                        warn!("BufferManager: Deadlock Timout trying to choose unpinned buffer");
+                        Err(DeadLockTimeout)
+                    }
+                }
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroUsize;
-    use std::thread;
-    use std::time::Duration;
     use crate::file_management::block_id::{BlockId, DbFilename};
     use crate::file_management::file_manager::{FileManager, FileManagerBuilder};
     use crate::file_management::page::Page;
@@ -89,13 +158,22 @@ mod tests {
     use crate::memory_management::buffer_manager::BufferManager;
     use crate::memory_management::log_manager::{LogManager, LogSequenceNumber};
     use crate::utils::logging::init_logging;
+    use log::info;
+    use std::num::NonZeroUsize;
+    use std::ops::DerefMut;
+    use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn test_buffers() {
         init_logging();
-        
-        let file_manager = FileManagerBuilder::unittest("buffer_test").block_size(NonZeroUsize::new(100 as usize).unwrap()).build().unwrap();
-        let log_manager = LogManager::new(&file_manager, &DbFilename::from("test_buffers.log")).unwrap();
+
+        let file_manager = FileManagerBuilder::unittest("buffer_test")
+            .block_size(NonZeroUsize::new(100 as usize).unwrap())
+            .build()
+            .unwrap();
+        let log_manager =
+            LogManager::new(&file_manager, &DbFilename::from("test_buffers.log")).unwrap();
         let pool_size = 3;
         let deadlock_waiting_duration = Duration::from_secs(10);
         let buffer_manager = BufferManager::new(
@@ -109,20 +187,30 @@ mod tests {
         let mut bm = buffer_manager.clone();
         let block1 = block.clone();
         let t1 = thread::spawn(move || {
-            let mut buffer = bm.pin(&block1.clone()).unwrap();
-            let page = buffer.page();
-            let n = page.get_i32(80);
-            page.set_i32(80, n+1);
-            buffer.set_modified(TransactionNumber::from(1), None);
-            buffer.unpin();
-            n + 1
+            info!("Thread 1 Writing to {:?}", &block1);
+            let mut buffer = bm.pin(&block1).unwrap();
+            let n_plus_1 = buffer.modify_page(
+                |page| {
+                    let n = page.get_i32(80);
+                    page.set_i32(80, n + 1);
+                    n + 1
+                },
+                TransactionNumber::from(1),
+                None,
+            );
+            bm.unpin(&buffer);
+            info!("Thread 1 Unpinned returning {}", n_plus_1);
+            n_plus_1
         });
         let expected_n_in_block_1 = t1.join().unwrap();
 
-        let other_threads = (2 ..= 4).map(|thread_nr| {
+        let other_threads = (2..=4).map(|thread_nr| {
             let mut bm = buffer_manager.clone();
-            let block_n = block.clone();
-            thread::spawn(move || {bm.pin(&block_n.clone().with_other_block_number(thread_nr))})
+            let block_n = block.clone().with_other_block_number(thread_nr);
+            thread::spawn(move || {
+                info!("Thread {thread_nr} pinning {:?}", &block_n);
+                bm.pin(&block_n)
+            })
         });
         let other_buffers = other_threads
             .map(|t| t.join().unwrap())
@@ -130,21 +218,31 @@ mod tests {
             .collect::<Vec<_>>();
 
         let page1 = Page::new(file_manager.block_size);
-        file_manager.read(&block, &page1).expect("Error reading block");
+        file_manager
+            .read(&block, &page1)
+            .expect("Error reading block");
         let got_n_in_block_1 = page1.get_i32(80);
-        assert_eq!(got_n_in_block_1, expected_n_in_block_1);
+        assert_eq!(got_n_in_block_1, expected_n_in_block_1, "Changes of first block should be flushed after unpinning and pinning others to force flush");
 
         buffer_manager.unpin(other_buffers.first().unwrap());
         let mut bm = buffer_manager.clone();
         let mut buffer = bm.pin(&block).unwrap();
-        let mut page = buffer.page();
-        page.set_i32(80, 9999);
-        buffer.set_modified(TransactionNumber::from(1), None);
+        buffer.modify_page(
+            |page| page.set_i32(80, 9999),
+            TransactionNumber::from(1),
+            None,
+        );
         buffer_manager.unpin(&buffer);
 
         let mut page1 = Page::new(file_manager.block_size);
-        file_manager.read(&block, &mut page1).expect("Error reading block");
-        assert_eq!(page1.get_i32(80), expected_n_in_block_1, "Changes with unpinned buffer should not be written to disk");
+        file_manager
+            .read(&block, &mut page1)
+            .expect("Error reading block");
+        assert_eq!(
+            page1.get_i32(80),
+            expected_n_in_block_1,
+            "Changes with unpinned buffer should not be written to disk"
+        );
 
         // Todo: Test Deadlock
     }

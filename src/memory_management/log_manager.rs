@@ -58,7 +58,7 @@ impl LogManager {
             0 => Self::append_new_block(log_file, &fm, &mut log_page)?,
             log_size => {
                 let block_id = BlockId::new(log_file.clone(), log_size - 1);
-                fm.read(&block_id, &mut log_page)?;
+                fm.read(&block_id, &log_page)?;
                 block_id
             }
         };
@@ -135,9 +135,9 @@ impl LogManager {
 
     pub fn iter(&self) -> Result<LogManagerIter, IoError> {
         let fm = self.file_manager.clone();
-        let mut page = Page::new(fm.block_size);
+        let page = Page::new(fm.block_size);
         let head = self.head.lock().unwrap();
-        fm.read(&head.block, &mut page)?;
+        fm.read(&head.block, &page)?;
         let boundary = page.get_i32(0);
 
         Ok(LogManagerIter {
@@ -173,7 +173,7 @@ impl Iterator for LogManagerIter {
             self.block = self
                 .block
                 .with_other_block_number(self.block.block_number() - 1);
-            if let Err(read_block_result) = self.file_manager.read(&self.block, &mut self.page) {
+            if let Err(read_block_result) = self.file_manager.read(&self.block, &self.page) {
                 return Some(Err(read_block_result));
             }
             self.boundary = self.page.get_i32(0) as usize;

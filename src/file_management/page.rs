@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
@@ -22,7 +21,11 @@ impl Page {
     }
 
     pub fn get_i32(&self, offset: usize) -> i32 {
-        i32::from_le_bytes(self.byte_buffer.lock().unwrap()[offset..offset + 4].try_into().unwrap())
+        i32::from_le_bytes(
+            self.byte_buffer.lock().unwrap()[offset..offset + 4]
+                .try_into()
+                .unwrap(),
+        )
     }
 
     pub fn set_i32(&self, offset: usize, value: i32) {
@@ -36,7 +39,8 @@ impl Page {
 
     pub fn set_bytes(&self, offset: usize, value: &[u8]) {
         self.set_i32(offset, value.len() as i32);
-        self.byte_buffer.lock().unwrap()[offset + 4..offset + 4 + value.len()].copy_from_slice(value);
+        self.byte_buffer.lock().unwrap()[offset + 4..offset + 4 + value.len()]
+            .copy_from_slice(value);
     }
 
     pub fn get_string(&self, offset: usize) -> String {

@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use crate::file_management::block_id::BlockId;
 use crate::file_management::file_manager::{FileManager, IoError};
 use crate::file_management::page::Page;
@@ -6,7 +5,8 @@ use crate::memory_management::log_manager::{LogManager, LogSequenceNumber};
 use log::debug;
 use std::fmt::Display;
 use std::num::NonZeroUsize;
-use std::sync::Arc;
+use std::ops::DerefMut;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct TransactionNumber(NonZeroUsize);
@@ -17,24 +17,25 @@ impl From<u64> for TransactionNumber {
     }
 }
 
+#[derive(Debug)]
+struct BufferData {
+    page: Page,
+    block: Option<BlockId>,
+    transaction: Option<TransactionNumber>,
+    log_sequence_number: Option<LogSequenceNumber>,
+    pins_count: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct Buffer {
     file_manager: FileManager,
     log_manager: LogManager,
-    page: Page,
-    block: Option<BlockId>,
-    pins_count: usize,
-    transaction_number: Option<TransactionNumber>,
-    log_sequence_number: Option<LogSequenceNumber>,
+    data: Arc<Mutex<BufferData>>,
 }
 
 impl Display for Buffer {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "Buffer block={:?} pins_count={:?} transaction_number={:?} log_sequence_number={:?}",
-            self.block, self.pins_count, self.transaction_number, self.log_sequence_number
-        )
+        write!(f, "Buffer data={:?}", self.data)
     }
 }
 
@@ -43,37 +44,44 @@ impl Buffer {
         Buffer {
             file_manager: file_manager.clone(),
             log_manager: log_manager.clone(),
-            page: Page::new(file_manager.block_size),
-            block: None,
-            pins_count: 0,
-            transaction_number: None,
-            log_sequence_number: None,
+            data: Arc::new(Mutex::new(BufferData {
+                page: Page::new(file_manager.block_size),
+                block: None,
+                transaction: None,
+                log_sequence_number: None,
+                pins_count: 0,
+            })),
         }
     }
 
-    pub fn page(&self) -> &Page {
-        &self.page
+    pub fn page(&self) -> Page {
+        self.data.lock().unwrap().page.clone()
     }
 
     pub fn block(&self) -> Option<BlockId> {
-        self.block.clone()
+        self.data.lock().unwrap().block.clone()
     }
 
-    pub fn set_modified(
+    pub fn modify_page<R>(
         &mut self,
+        modifier: fn(&mut Page) -> R,
         transaction_number: TransactionNumber,
         log_sequence_number: Option<LogSequenceNumber>,
-    ) {
+    ) -> R {
+        let mut data_guard = self.data.lock().unwrap();
+        let data = data_guard.deref_mut();
         debug!(
-            "Buffer: Set modified for block {:?} {:?} {:?}",
-            self.block, transaction_number, log_sequence_number
+            "modifying page block={:?} transaction_number={:?}",
+            data.block, transaction_number
         );
-        self.transaction_number = Some(transaction_number);
-        self.log_sequence_number = log_sequence_number;
+        let result = modifier(&mut data.page);
+        data.transaction = Some(transaction_number);
+        data.log_sequence_number = log_sequence_number;
+        result
     }
 
     pub fn is_pinned(&self) -> bool {
-        self.pins_count > 0
+        self.data.lock().unwrap().pins_count > 0
     }
 
     pub fn is_not_pinned(&self) -> bool {
@@ -81,76 +89,107 @@ impl Buffer {
     }
 
     pub fn modifying_transaction_number(&self) -> Option<TransactionNumber> {
-        self.transaction_number
+        self.data.lock().unwrap().transaction
     }
 
     pub fn assign_to_block(&mut self, block_id: BlockId) -> Result<(), IoError> {
+        let mut data_guard = self.data.lock().unwrap();
+        let locked_data = data_guard.deref_mut();
         debug!(
-            "Buffer: Assigning to block {:?} <- block {:?}",
-            self.block, block_id
+            "Buffer: Assigning block {:?} (previous: {:?}) buffer {:?}",
+            block_id, locked_data.block, self
         );
-        self.flush()?;
-        self.block = Some(block_id.clone());
+
+        self._flush(locked_data)?;
+
+        locked_data.block = Some(block_id.clone());
         debug!(
             "Buffer: Assigning to block={:?}, read file_manager={:?} contents={:?}",
-            &block_id, self.file_manager, self.page
+            &block_id, self.file_manager, locked_data.page
         );
-        self.file_manager.read(&block_id, &self.page)?;
+        self.file_manager.read(&block_id, &locked_data.page)?;
         debug!(
             "Buffer: Assigning to block={:?}, set pins_count=0",
             &block_id
         );
-        self.pins_count = 0;
+
+        locked_data.pins_count = 0;
         Ok(())
     }
 
-    // TODO: maybe not public
-    pub fn flush(&mut self) -> Result<(), IoError> {
-        if self.transaction_number.is_some() {
+    fn _flush(&self, locked_data: &mut BufferData) -> Result<(), IoError> {
+        if locked_data.transaction.is_some() {
             debug!("Buffer: Flush {}", self);
-            if let Some(lsn) = self.log_sequence_number {
+            let block = locked_data
+                .block
+                .clone()
+                .expect("Buffer: Block not set when trying to flush");
+            if let Some(lsn) = locked_data.log_sequence_number {
                 self.log_manager.flush(lsn)?;
             }
-            self.file_manager
-                .write(&self.block().unwrap(), &self.page)?;
-            self.transaction_number = None;
+            self.file_manager.write(&block, &locked_data.page)?;
+            locked_data.transaction = None;
+        } else {
+            debug!("Flushing? No transaction number => no flush")
         }
         Ok(())
     }
 
-    pub fn pin(&mut self) {
-        self.pins_count += 1;
+    pub fn flush(&self) -> Result<(), IoError> {
+        let mut data_guard = self.data.lock().unwrap();
+        let locked_data = data_guard.deref_mut();
+        self._flush(locked_data)
+    }
+
+    pub fn increment_pins_count(&self) {
+        let mut data_guard = self.data.lock().unwrap();
+        let data = data_guard.deref_mut();
+        data.pins_count += 1;
         debug!(
             "Buffer: Pinned block {:?} new count {:?}",
-            self.block, self.pins_count
+            data.block, data.pins_count
         );
     }
 
-    pub fn unpin(&mut self) {
-        self.pins_count -= 1;
+    pub fn decrement_pins_count(&self) {
+        let mut data_guard = self.data.lock().unwrap();
+        let data = data_guard.deref_mut();
+        data.pins_count -= 1;
         debug!(
             "Buffer: Unpinned block {:?} new count {:?}",
-            self.block, self.pins_count
+            data.block, data.pins_count
         );
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroUsize;
     use crate::file_management::block_id::DbFilename;
     use crate::file_management::file_manager::FileManagerBuilder;
-    use crate::memory_management::buffer::Buffer;
+    use crate::memory_management::buffer::{Buffer, TransactionNumber};
     use crate::memory_management::log_manager::LogManager;
+    use std::num::NonZeroUsize;
 
     #[test]
     fn test_buffer_cloning() {
-        let file_manager = FileManagerBuilder::unittest("buffer_test_cloning").block_size(NonZeroUsize::new(100 as usize).unwrap()).build().unwrap();
-        let log_manager = LogManager::new(&file_manager, &DbFilename::from("test_buffer_cloning.log")).unwrap();
+        let file_manager = FileManagerBuilder::unittest("buffer_test_cloning")
+            .block_size(NonZeroUsize::new(100 as usize).unwrap())
+            .build()
+            .unwrap();
+        let log_manager =
+            LogManager::new(&file_manager, &DbFilename::from("test_buffer_cloning.log")).unwrap();
         let mut buffer = Buffer::new(&file_manager, &log_manager);
         let mut buffer_clone = buffer.clone();
 
-        buffer.page().set_i32(0, 100);
-        assert_eq!(buffer.page().get_contents(), buffer_clone.page().get_contents());
+        buffer.modify_page(
+            |page| page.set_i32(0, 100),
+            TransactionNumber::from(1),
+            None,
+        );
+        // buffer.page().set_i32(0, 100);
+        assert_eq!(
+            buffer.page().get_contents(),
+            buffer_clone.page().get_contents()
+        );
     }
 }
