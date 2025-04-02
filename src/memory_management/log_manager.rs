@@ -44,6 +44,41 @@ pub struct LogManager {
     head: Arc<Mutex<LogHead>>,
 }
 
+pub struct LogManagerBuilder {
+    log_file: DbFilename,
+}
+
+impl Default for LogManagerBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LogManagerBuilder {
+    const DEFAULT_LOGFILE: &'static str = "hfdb.log";
+    const UNITTEST_LOGFILE: &'static str = "hfdb_unittest.log";
+    pub fn new() -> Self {
+        Self {
+            log_file: DbFilename::from(Self::DEFAULT_LOGFILE),
+        }
+    }
+
+    pub fn unittest() -> Self {
+        Self {
+            log_file: DbFilename::from(Self::UNITTEST_LOGFILE),
+        }
+    }
+
+    pub fn log_file(mut self, log_file: DbFilename) -> Self {
+        self.log_file = log_file;
+        self
+    }
+
+    pub fn build(&self, file_manager: &FileManager) -> Result<LogManager, IoError> {
+        LogManager::new(file_manager, &self.log_file)
+    }
+}
+
 impl LogManager {
     pub fn new(file_manager: &FileManager, log_file: &DbFilename) -> Result<LogManager, IoError> {
         debug!(

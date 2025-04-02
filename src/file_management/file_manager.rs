@@ -24,18 +24,21 @@ pub struct FileManagerBuilder {
 }
 
 impl FileManagerBuilder {
+    const DEFAULT_BLOCK_SIZE: NonZeroUsize = NonZeroUsize::new(4096).unwrap();
+    const DEFAULT_MAX_OPEN_FILES: NonZeroUsize = NonZeroUsize::new(512).unwrap();
+
+    const UNITTEST_DB_DIR: &'static str = "/data/hanfried-db-unittest";
+
     pub fn new(db_directory: String) -> Self {
         FileManagerBuilder {
             db_directory,
-            block_size: NonZeroUsize::new(4096).unwrap(),
-            max_open_files: NonZeroUsize::new(512).unwrap(),
+            block_size: Self::DEFAULT_BLOCK_SIZE,
+            max_open_files: Self::DEFAULT_MAX_OPEN_FILES,
         }
     }
 
-    const TEST_DB_DIR: &'static str = "/data/hanfried-db-unittest";
-
     pub fn unittest(db_sub_directory: &str) -> Self {
-        let db_directory = Self::TEST_DB_DIR;
+        let db_directory = Self::UNITTEST_DB_DIR;
         Self::new(format!("{db_directory}/{db_sub_directory}"))
     }
 
@@ -245,7 +248,7 @@ mod tests {
                 let fm = file_manager.clone();
                 parallel_write_threads.push(thread::spawn(move || {
                     let block = BlockId::new(fname, block_nr);
-                    let mut page = Page::new(TEST_FILES_BLOCKSIZE);
+                    let page = Page::new(TEST_FILES_BLOCKSIZE);
                     page.set_i32(0, file_nr as i32);
                     page.set_i32(4, block_nr as i32);
                     fm.write(&block, &page).unwrap();

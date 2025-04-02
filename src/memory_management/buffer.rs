@@ -179,7 +179,7 @@ mod tests {
         let log_manager =
             LogManager::new(&file_manager, &DbFilename::from("test_buffer_cloning.log")).unwrap();
         let mut buffer = Buffer::new(&file_manager, &log_manager);
-        let mut buffer_clone = buffer.clone();
+        let buffer_clone = buffer.clone();
 
         buffer.modify_page(
             |page| page.set_i32(0, 100),

@@ -1,7 +1,12 @@
-use log::LevelFilter;
+use log::{warn, LevelFilter};
 use log4rs::append::console::ConsoleAppender;
 use log4rs::config::runtime::{Appender, Config, Root};
 use log4rs::encode::pattern::PatternEncoder;
+use std::env;
+use std::str::FromStr;
+use std::sync::Once;
+
+static INIT: Once = Once::new();
 
 pub fn init_logging() {
     let stdout = ConsoleAppender::builder()
@@ -15,6 +20,11 @@ pub fn init_logging() {
     //     .build("log/requests.log")
     //     .unwrap();
 
+    let log_level = match env::var("HFDB_LOG_LEVEL") {
+        Ok(level) => LevelFilter::from_str(&level).unwrap(),
+        Err(_) => LevelFilter::Debug,
+    };
+
     let config = Config::builder()
         .appender(Appender::builder().build("stdout", Box::new(stdout)))
         // .appender(Appender::builder().build("requests", Box::new(requests)))
@@ -23,8 +33,12 @@ pub fn init_logging() {
         //     .appender("requests")
         //     .additive(false)
         //     .build("app::requests", LevelFilter::Info))
-        .build(Root::builder().appender("stdout").build(LevelFilter::Debug))
+        .build(Root::builder().appender("stdout").build(log_level))
         .unwrap();
 
-    log4rs::init_config(config).unwrap();
+    INIT.call_once(|| {
+        if let Err(e) = log4rs::init_config(config) {
+            warn!("Error initializing logging config: {}", e)
+        }
+    })
 }
