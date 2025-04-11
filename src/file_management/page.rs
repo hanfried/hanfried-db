@@ -1,3 +1,4 @@
+use crate::datatypes::HfdbSerializableDatatype;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
@@ -62,5 +63,13 @@ impl Page {
 
     pub fn set_contents(&self, value: &[u8]) {
         self.byte_buffer.lock().unwrap().copy_from_slice(value);
+    }
+
+    pub fn set<T: HfdbSerializableDatatype>(&self, offset: usize, value: &T) {
+        value.serialize(&mut self.byte_buffer.lock().unwrap().as_mut()[offset..]);
+    }
+
+    pub fn get<T: HfdbSerializableDatatype>(&self, offset: usize) -> T {
+        T::deserialize(self.byte_buffer.lock().unwrap()[offset..].as_ref())
     }
 }
