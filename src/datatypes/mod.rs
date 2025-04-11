@@ -132,23 +132,23 @@ mod tests {
     #[test]
     fn test_serialize_deserialize_fixed_length_counts() {
         let mut buffer = [0u8; 100];
-        check_serialize_deserialize(&mut buffer, TinyCount::from(0));
+        check_serialize_deserialize(&mut buffer, TinyCount::from(0u8));
         check_serialize_deserialize(&mut buffer, TinyCount::from(u8::MIN));
         check_serialize_deserialize(&mut buffer, TinyCount::from(u8::MAX));
 
-        check_serialize_deserialize(&mut buffer, SmallCount::from(0));
+        check_serialize_deserialize(&mut buffer, SmallCount::from(0u16));
         check_serialize_deserialize(&mut buffer, SmallCount::from(u16::MIN));
         check_serialize_deserialize(&mut buffer, SmallCount::from(u16::MAX));
 
-        check_serialize_deserialize(&mut buffer, Count::from(0));
+        check_serialize_deserialize(&mut buffer, Count::from(0u32));
         check_serialize_deserialize(&mut buffer, Count::from(u32::MIN));
         check_serialize_deserialize(&mut buffer, Count::from(u32::MAX));
 
-        check_serialize_deserialize(&mut buffer, BigCount::from(0));
+        check_serialize_deserialize(&mut buffer, BigCount::from(0u64));
         check_serialize_deserialize(&mut buffer, BigCount::from(u64::MIN));
         check_serialize_deserialize(&mut buffer, BigCount::from(u64::MAX));
 
-        check_serialize_deserialize(&mut buffer, HugeCount::from(0));
+        check_serialize_deserialize(&mut buffer, HugeCount::from(0u128));
         check_serialize_deserialize(&mut buffer, HugeCount::from(u128::MIN));
         check_serialize_deserialize(&mut buffer, HugeCount::from(u128::MAX));
     }

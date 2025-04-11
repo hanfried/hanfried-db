@@ -1,4 +1,5 @@
 use crate::datatypes::HfdbSerializableDatatype;
+use std::num::NonZeroUsize;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct TinyCount(u8);
@@ -23,9 +24,27 @@ impl From<u8> for TinyCount {
     }
 }
 
-impl From<TinyCount> for u8 {
-    fn from(value: TinyCount) -> u8 {
+impl From<usize> for TinyCount {
+    fn from(value: usize) -> Self {
+        Self(value as u8)
+    }
+}
+
+impl From<NonZeroUsize> for TinyCount {
+    fn from(value: NonZeroUsize) -> Self {
+        Self(usize::from(value) as u8)
+    }
+}
+
+impl From<&TinyCount> for u8 {
+    fn from(value: &TinyCount) -> u8 {
         value.0
+    }
+}
+
+impl From<&TinyCount> for usize {
+    fn from(value: &TinyCount) -> usize {
+        usize::from(value.0)
     }
 }
 
@@ -52,9 +71,27 @@ impl From<u16> for SmallCount {
     }
 }
 
-impl From<SmallCount> for u16 {
-    fn from(value: SmallCount) -> u16 {
+impl From<usize> for SmallCount {
+    fn from(value: usize) -> Self {
+        Self(value as u16)
+    }
+}
+
+impl From<NonZeroUsize> for SmallCount {
+    fn from(value: NonZeroUsize) -> Self {
+        Self(usize::from(value) as u16)
+    }
+}
+
+impl From<&SmallCount> for u16 {
+    fn from(value: &SmallCount) -> u16 {
         value.0
+    }
+}
+
+impl From<&SmallCount> for usize {
+    fn from(value: &SmallCount) -> usize {
+        usize::from(value.0)
     }
 }
 
@@ -81,9 +118,27 @@ impl From<u32> for Count {
     }
 }
 
-impl From<Count> for u32 {
-    fn from(value: Count) -> u32 {
+impl From<usize> for Count {
+    fn from(value: usize) -> Self {
+        Self(value as u32)
+    }
+}
+
+impl From<NonZeroUsize> for Count {
+    fn from(value: NonZeroUsize) -> Self {
+        Self(usize::from(value) as u32)
+    }
+}
+
+impl From<&Count> for u32 {
+    fn from(value: &Count) -> u32 {
         value.0
+    }
+}
+
+impl From<&Count> for usize {
+    fn from(value: &Count) -> usize {
+        value.0 as usize
     }
 }
 
@@ -111,9 +166,27 @@ impl From<u64> for BigCount {
     }
 }
 
-impl From<BigCount> for u64 {
-    fn from(value: BigCount) -> u64 {
+impl From<usize> for BigCount {
+    fn from(value: usize) -> Self {
+        Self(value as u64)
+    }
+}
+
+impl From<NonZeroUsize> for BigCount {
+    fn from(value: NonZeroUsize) -> Self {
+        Self(usize::from(value) as u64)
+    }
+}
+
+impl From<&BigCount> for u64 {
+    fn from(value: &BigCount) -> u64 {
         value.0
+    }
+}
+
+impl From<&BigCount> for usize {
+    fn from(value: &BigCount) -> usize {
+        value.0 as usize
     }
 }
 
@@ -141,8 +214,26 @@ impl From<u128> for HugeCount {
     }
 }
 
-impl From<HugeCount> for u128 {
-    fn from(value: HugeCount) -> u128 {
+impl From<usize> for HugeCount {
+    fn from(value: usize) -> Self {
+        Self(value as u128)
+    }
+}
+
+impl From<NonZeroUsize> for HugeCount {
+    fn from(value: NonZeroUsize) -> Self {
+        Self(usize::from(value) as u128)
+    }
+}
+
+impl From<&HugeCount> for u128 {
+    fn from(value: &HugeCount) -> u128 {
         value.0
+    }
+}
+
+impl From<&HugeCount> for usize {
+    fn from(value: &HugeCount) -> usize {
+        value.0 as usize
     }
 }

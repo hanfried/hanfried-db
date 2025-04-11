@@ -1,3 +1,4 @@
+use crate::datatypes::varcount::Varcount;
 use crate::datatypes::HfdbSerializableDatatype;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
@@ -21,41 +22,45 @@ impl Page {
         }
     }
 
-    pub fn get_i32(&self, offset: usize) -> i32 {
-        i32::from_le_bytes(
-            self.byte_buffer.lock().unwrap()[offset..offset + 4]
-                .try_into()
-                .unwrap(),
-        )
-    }
-
-    pub fn set_i32(&self, offset: usize, value: i32) {
-        self.byte_buffer.lock().unwrap()[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
-    }
-
+    // pub fn get_i32(&self, offset: usize) -> i32 {
+    //     i32::from_le_bytes(
+    //         self.byte_buffer.lock().unwrap()[offset..offset + 4]
+    //             .try_into()
+    //             .unwrap(),
+    //     )
+    // }
+    //
+    // pub fn set_i32(&self, offset: usize, value: i32) {
+    //     self.byte_buffer.lock().unwrap()[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    // }
+    //
     pub fn get_bytes(&self, offset: usize) -> Vec<u8> {
-        let length = self.get_i32(offset);
-        self.byte_buffer.lock().unwrap()[offset + 4..offset + 4 + length as usize].to_vec()
+        // let length = self.get_i32(offset);
+        let length = self.get::<Varcount>(offset);
+        let offset = offset + length.serialized_length();
+        self.byte_buffer.lock().unwrap()[offset..offset + usize::from(&length)].to_vec()
     }
 
     pub fn set_bytes(&self, offset: usize, value: &[u8]) {
-        self.set_i32(offset, value.len() as i32);
-        self.byte_buffer.lock().unwrap()[offset + 4..offset + 4 + value.len()]
-            .copy_from_slice(value);
+        // self.set_i32(offset, value.len() as i32);
+        let length = Varcount::from(value.len());
+        self.set(offset, &length);
+        let offset = offset + length.serialized_length();
+        self.byte_buffer.lock().unwrap()[offset..offset + value.len()].copy_from_slice(value);
     }
 
-    pub fn get_string(&self, offset: usize) -> String {
-        let bytes = self.get_bytes(offset);
-        String::from_utf8(bytes).unwrap()
-    }
-
-    pub fn set_string(&mut self, offset: usize, value: &str) {
-        self.set_bytes(offset, value.as_bytes());
-    }
-
-    pub fn max_length(&self, s: &str) -> usize {
-        4 + s.len()
-    }
+    // pub fn get_string(&self, offset: usize) -> String {
+    //     let bytes = self.get_bytes(offset);
+    //     String::from_utf8(bytes).unwrap()
+    // }
+    //
+    // pub fn set_string(&mut self, offset: usize, value: &str) {
+    //     self.set_bytes(offset, value.as_bytes());
+    // }
+    //
+    // pub fn max_length(&self, s: &str) -> usize {
+    //     4 + s.len()
+    // }
 
     pub fn get_contents(&self) -> Vec<u8> {
         self.byte_buffer.lock().unwrap().to_vec()

@@ -198,6 +198,7 @@ impl BufferManager {
 
 #[cfg(test)]
 mod tests {
+    use crate::datatypes::fixed_length_integers::Integer;
     use crate::db_management_system::hfdb::HanfriedDbBuilder;
     use crate::file_management::block_id::{BlockId, DbFilename};
     use crate::file_management::file_manager::FileManagerBuilder;
@@ -239,8 +240,10 @@ mod tests {
             let mut buffer = bm.pin(&block1).unwrap();
             let n_plus_1 = buffer.modify_page(
                 |page| {
-                    let n = page.get_i32(80);
-                    page.set_i32(80, n + 1);
+                    // let n = page.get_i32(80);
+                    // page.set_i32(80, n + 1);
+                    let n = i32::from(page.get::<Integer>(80));
+                    page.set(80, &Integer::from(n + 1));
                     n + 1
                 },
                 TransactionNumber::from(1),
@@ -269,14 +272,14 @@ mod tests {
         file_manager
             .read(&block, &page1)
             .expect("Error reading block");
-        let got_n_in_block_1 = page1.get_i32(80);
+        let got_n_in_block_1 = i32::from(page1.get::<Integer>(80)); // page1.get_i32(80);
         assert_eq!(got_n_in_block_1, expected_n_in_block_1, "Changes of first block should be flushed after unpinning and pinning others to force flush");
 
         buffer_manager.unpin(other_buffers.first().unwrap());
         let bm = buffer_manager.clone();
         let mut buffer = bm.pin(&block).unwrap();
         buffer.modify_page(
-            |page| page.set_i32(80, 9999),
+            |page| page.set(80, &Integer::from(9999)), // page.set_i32(80, 9999),
             TransactionNumber::from(1),
             None,
         );
@@ -287,7 +290,8 @@ mod tests {
             .read(&block, &mut page1)
             .expect("Error reading block");
         assert_eq!(
-            page1.get_i32(80),
+            // page1.get_i32(80),
+            i32::from(page1.get::<Integer>(80)),
             expected_n_in_block_1,
             "Changes with unpinned buffer should not be written to disk"
         );

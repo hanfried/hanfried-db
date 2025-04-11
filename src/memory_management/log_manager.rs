@@ -1,9 +1,12 @@
+use crate::datatypes::fixed_length_counts::SmallCount;
 use crate::file_management::block_id::{BlockId, DbFilename};
 use crate::file_management::file_manager::{FileManager, IoError};
 use crate::file_management::page::Page;
 use log::debug;
 use std::fmt::Display;
 use std::sync::{Arc, Mutex, MutexGuard};
+
+type OffsetInsidePageBlock = SmallCount;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub struct LogSequenceNumber(usize);
@@ -120,7 +123,7 @@ impl LogManager {
         log_page: &mut Page,
     ) -> Result<BlockId, IoError> {
         let block_id = fm.append(log_file)?;
-        log_page.set_i32(0, usize::from(fm.block_size) as i32);
+        log_page.set(0, &OffsetInsidePageBlock::from(fm.block_size));
         fm.write(&block_id, log_page)?;
         debug!(
             "Append new block_id={:?}, log_file={:?}, log_page={:?}",
@@ -151,18 +154,18 @@ impl LogManager {
     pub fn append(&self, log_record: &[u8]) -> Result<LogPosition, IoError> {
         // println!("Append log record: {:?} current head {:?}", log_record, self.head.lock().unwrap());
         let mut head = self.head.lock().unwrap();
-        let mut boundary = head.page.get_i32(0);
+        let mut boundary = head.page.get::<OffsetInsidePageBlock>(0);
         let record_size = log_record.len();
         let bytes_needed = record_size + 4;
-        if (boundary as usize) < bytes_needed + 4 {
+        if (usize::from(&boundary)) < bytes_needed + 4 {
             self._flush(&mut head)?;
             head.block =
                 Self::append_new_block(&self.log_file, &self.file_manager, &mut head.page)?;
-            boundary = head.page.get_i32(0);
+            boundary = head.page.get(0);
         }
-        let record_pos = boundary - bytes_needed as i32;
-        head.page.set_bytes(record_pos as usize, log_record);
-        head.page.set_i32(0, record_pos);
+        let record_pos = usize::from(&boundary) - bytes_needed;
+        head.page.set_bytes(record_pos, log_record);
+        head.page.set(0, &OffsetInsidePageBlock::from(record_pos));
         head.position.latest = head.position.latest.next();
         // println!("Position now {:?} after appending log record: {:?}", head.position, log_record);
         Ok(head.position.clone())
@@ -173,14 +176,14 @@ impl LogManager {
         let page = Page::new(fm.block_size);
         let head = self.head.lock().unwrap();
         fm.read(&head.block, &page)?;
-        let boundary = page.get_i32(0);
+        let boundary = page.get::<OffsetInsidePageBlock>(0);
 
         Ok(LogManagerIter {
             file_manager: fm,
             block: head.block.clone(),
             page,
-            pos_current: boundary as usize,
-            boundary: boundary as usize,
+            pos_current: usize::from(&boundary),
+            boundary: usize::from(&boundary),
         })
     }
 }
@@ -211,7 +214,7 @@ impl Iterator for LogManagerIter {
             if let Err(read_block_result) = self.file_manager.read(&self.block, &self.page) {
                 return Some(Err(read_block_result));
             }
-            self.boundary = self.page.get_i32(0) as usize;
+            self.boundary = usize::from(&self.page.get::<OffsetInsidePageBlock>(0));
             self.pos_current = self.boundary;
         }
         let record = self.page.get_bytes(self.pos_current);
@@ -222,6 +225,9 @@ impl Iterator for LogManagerIter {
 
 #[cfg(test)]
 mod tests {
+    use crate::datatypes::varchar::Varchar;
+    use crate::datatypes::varint::Varint;
+    use crate::datatypes::varpair::Varpair;
     use crate::file_management::block_id::DbFilename;
     use crate::file_management::file_manager::FileManagerBuilder;
     use crate::file_management::page::Page;
@@ -231,9 +237,10 @@ mod tests {
 
     fn create_log_record(s: &str, n: i32) -> Vec<u8> {
         let n_pos = s.len() + 4;
-        let mut p = Page::new(NonZeroUsize::new(n_pos + 4).unwrap());
-        p.set_string(0, s);
-        p.set_i32(n_pos, n);
+        let p = Page::new(NonZeroUsize::new(n_pos + 4).unwrap());
+        p.set(0, &Varpair::from((Varchar::from(s), Varint::from(n))));
+        // p.set_string(0, s);
+        // p.set_i32(n_pos, n);
         p.get_contents().to_vec()
     }
 
@@ -241,9 +248,11 @@ mod tests {
         let mut log_records: Vec<(String, i32)> = Vec::new();
         for record in lm.iter().unwrap() {
             let page = Page::from_vec(record.unwrap());
-            let s = page.get_string(0);
-            let val = page.get_i32(page.max_length(s.as_str()));
-            log_records.push((s.to_string(), val));
+            let record = page.get::<Varpair<Varchar, Varint>>(0);
+            let (s, val) = record.as_tuple();
+            // let s = page.get_string(0);
+            // let val = page.get_i32(page.max_length(s.as_str()));
+            log_records.push((String::from(s), i32::from(val)));
         }
         log_records
     }

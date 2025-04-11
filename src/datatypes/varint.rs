@@ -136,8 +136,50 @@ impl HfdbSerializableDatatype for Varint {
     }
 }
 
+impl From<i8> for Varint {
+    fn from(value: i8) -> Self {
+        Self(value as i64)
+    }
+}
+
+impl From<i16> for Varint {
+    fn from(value: i16) -> Self {
+        Self(value as i64)
+    }
+}
+
+impl From<i32> for Varint {
+    fn from(value: i32) -> Self {
+        Self(value as i64)
+    }
+}
+
 impl From<i64> for Varint {
     fn from(value: i64) -> Self {
         Self(value)
+    }
+}
+
+impl From<&Varint> for i8 {
+    fn from(value: &Varint) -> Self {
+        value.0 as i8
+    }
+}
+
+impl From<&Varint> for i16 {
+    fn from(value: &Varint) -> Self {
+        value.0 as i16
+    }
+}
+
+impl From<&Varint> for i32 {
+    fn from(value: &Varint) -> Self {
+        value.0 as i32
+    }
+}
+
+impl From<&Varint> for i64 {
+    fn from(value: &Varint) -> Self {
+        value.0
     }
 }

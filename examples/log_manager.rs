@@ -1,3 +1,6 @@
+use hanfried_db::datatypes::varchar::Varchar;
+use hanfried_db::datatypes::varint::Varint;
+use hanfried_db::datatypes::varpair::Varpair;
 use hanfried_db::db_management_system::hfdb::HanfriedDb;
 use hanfried_db::file_management::page::Page;
 use hanfried_db::memory_management::log_manager::{LogManager, LogSequenceNumber};
@@ -7,9 +10,10 @@ use std::num::NonZeroUsize;
 
 fn create_log_record(s: &str, n: i32) -> Vec<u8> {
     let n_pos = s.len() + 4;
-    let mut p = Page::new(NonZeroUsize::new(n_pos + 4).unwrap());
-    p.set_string(0, s);
-    p.set_i32(n_pos, n);
+    let p = Page::new(NonZeroUsize::new(n_pos + 4).unwrap());
+    p.set(0, &Varpair::from((Varchar::from(s), Varint::from(n))));
+    // p.set_string(0, s);
+    // p.set_i32(n_pos, n);
     p.get_contents().to_vec()
 }
 
@@ -28,9 +32,11 @@ fn print_log_records(log_manager: &LogManager, msg: &str) {
     let log_iterator = log_manager.iter().unwrap();
     for record in log_iterator {
         let page = Page::from_vec(record.unwrap());
-        let s = page.get_string(0);
-        let val = page.get_i32(page.max_length(s.as_str()));
-        println!("[{s:?} {val:?}]");
+        // let s = page.get_string(0);
+        // let val = page.get_i32(page.max_length(s.as_str()));
+        let record = page.get::<Varpair<Varchar, Varint>>(0);
+        let (s, val) = record.as_tuple();
+        println!("[{:?} {:?}]", s, val);
     }
 }
 
