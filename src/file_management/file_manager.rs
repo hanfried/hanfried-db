@@ -219,6 +219,8 @@ impl FileManager {
 
 #[cfg(test)]
 mod tests {
+    use crate::datatypes::varcount::Varcount;
+    use crate::datatypes::varpair::Varpair;
     use crate::file_management::block_id::{BlockId, DbFilename};
     use crate::file_management::file_manager::FileManagerBuilder;
     use crate::file_management::page::Page;
@@ -249,8 +251,12 @@ mod tests {
                 parallel_write_threads.push(thread::spawn(move || {
                     let block = BlockId::new(fname, block_nr);
                     let page = Page::new(TEST_FILES_BLOCKSIZE);
-                    page.set_i32(0, file_nr as i32);
-                    page.set_i32(4, block_nr as i32);
+                    page.set(
+                        0,
+                        &Varpair::from((Varcount::from(file_nr), Varcount::from(block_nr))),
+                    );
+                    // page.set_i32(0, file_nr as i32);
+                    // page.set_i32(4, block_nr as i32);
                     fm.write(&block, &page).unwrap();
                 }))
             }
@@ -265,9 +271,13 @@ mod tests {
                     let mut page = Page::new(TEST_FILES_BLOCKSIZE);
                     loop {
                         fm.read(&block, &mut page).unwrap();
-                        let file_nr_got = page.get_i32(0);
-                        let block_nr_got = page.get_i32(4);
-                        if file_nr_got == file_nr as i32 && block_nr_got == block_nr as i32 {
+                        let (&file_nr_got, &block_nr_got) =
+                            page.get::<Varpair<Varcount, Varcount>>(0).as_tuple();
+                        // let file_nr_got = page.get_i32(0);
+                        // let block_nr_got = page.get_i32(4);
+                        if usize::from(&file_nr_got) == file_nr
+                            && usize::from(&block_nr_got) == block_nr
+                        {
                             break;
                         } else {
                             thread::sleep(std::time::Duration::from_millis(20));
@@ -327,7 +337,7 @@ mod tests {
         thread::spawn(move || {
             for file_nr in 0..TEST_FILES_MAX {
                 let mut page = Page::new(TEST_FILES_BLOCKSIZE);
-                page.set_i32(0, file_nr as i32);
+                page.set(0, &Varcount::from(file_nr));
                 let fname = DbFilename::from(format!("testfile_write_{}", file_nr));
                 let block = BlockId::new(fname, 0);
                 println!("write to file_nr: {}", file_nr);
@@ -343,8 +353,8 @@ mod tests {
             let fname = DbFilename::from(format!("testfile_write_{}", file_nr));
             let block = BlockId::new(fname, 0);
             fm.read(&block, &mut page).unwrap();
-            let file_nr_got = page.get_i32(0);
-            assert_eq!(file_nr_got, file_nr as i32);
+            let file_nr_got = page.get::<Varcount>(0);
+            assert_eq!(usize::from(&file_nr_got), file_nr);
         }
 
         testing_finished.store(true, std::sync::atomic::Ordering::Relaxed);

@@ -164,6 +164,7 @@ impl Buffer {
 
 #[cfg(test)]
 mod tests {
+    use crate::datatypes::varint::Varint;
     use crate::file_management::block_id::DbFilename;
     use crate::file_management::file_manager::FileManagerBuilder;
     use crate::memory_management::buffer::{Buffer, TransactionNumber};
@@ -182,7 +183,7 @@ mod tests {
         let buffer_clone = buffer.clone();
 
         buffer.modify_page(
-            |page| page.set_i32(0, 100),
+            |page| page.set(0, &Varint::from(100)),
             TransactionNumber::from(1),
             None,
         );

@@ -1,9 +1,10 @@
 use crate::datatypes::HfdbSerializableDatatype;
+use std::num::NonZeroUsize;
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct Varlength(u64);
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+pub struct Varcount(u64);
 
-impl HfdbSerializableDatatype for Varlength {
+impl HfdbSerializableDatatype for Varcount {
     fn serialized_length(&self) -> usize {
         for leading_bits in 1..=8 {
             if self.0 < (1 << (leading_bits * 7)) {
@@ -71,26 +72,32 @@ impl HfdbSerializableDatatype for Varlength {
     }
 }
 
-impl From<usize> for Varlength {
+impl From<usize> for Varcount {
     fn from(value: usize) -> Self {
         Self(value as u64)
     }
 }
 
-impl From<u64> for Varlength {
+impl From<u64> for Varcount {
     fn from(value: u64) -> Self {
         Self(value)
     }
 }
 
-impl From<&Varlength> for usize {
-    fn from(value: &Varlength) -> Self {
+impl From<NonZeroUsize> for Varcount {
+    fn from(value: NonZeroUsize) -> Self {
+        Self(value.get() as u64)
+    }
+}
+
+impl From<&Varcount> for usize {
+    fn from(value: &Varcount) -> Self {
         value.0 as usize
     }
 }
 
-impl From<&Varlength> for u64 {
-    fn from(value: &Varlength) -> Self {
+impl From<&Varcount> for u64 {
+    fn from(value: &Varcount) -> Self {
         value.0
     }
 }

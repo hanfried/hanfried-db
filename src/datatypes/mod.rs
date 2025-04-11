@@ -1,7 +1,9 @@
+pub mod fixed_length_counts;
+pub mod fixed_length_integers;
 pub mod varchar;
+pub mod varcount;
 pub mod varint;
-pub mod varlength;
-mod varpair;
+pub mod varpair;
 
 pub trait HfdbSerializableDatatype {
     fn serialized_length(&self) -> usize;
@@ -11,9 +13,15 @@ pub trait HfdbSerializableDatatype {
 
 #[cfg(test)]
 mod tests {
+    use crate::datatypes::fixed_length_counts::{
+        BigCount, Count, HugeCount, SmallCount, TinyCount,
+    };
+    use crate::datatypes::fixed_length_integers::{
+        BigInteger, HugeInteger, Integer, SmallInteger, TinyInteger,
+    };
     use crate::datatypes::varchar::Varchar;
+    use crate::datatypes::varcount::Varcount;
     use crate::datatypes::varint::Varint;
-    use crate::datatypes::varlength::Varlength;
     use crate::datatypes::varpair::Varpair;
     use crate::datatypes::HfdbSerializableDatatype;
     use std::fmt::Debug;
@@ -51,11 +59,11 @@ mod tests {
         for power in 1..64 {
             let nth_power: u64 = 1u64 << power;
             println!("nth_power {nth_power} power = {power}");
-            check_serialize_deserialize(&mut buffer, Varlength::from(nth_power - 1));
-            check_serialize_deserialize(&mut buffer, Varlength::from(nth_power));
-            check_serialize_deserialize(&mut buffer, Varlength::from(nth_power + 1));
+            check_serialize_deserialize(&mut buffer, Varcount::from(nth_power - 1));
+            check_serialize_deserialize(&mut buffer, Varcount::from(nth_power));
+            check_serialize_deserialize(&mut buffer, Varcount::from(nth_power + 1));
         }
-        check_serialize_deserialize(&mut buffer, Varlength::from(usize::MAX));
+        check_serialize_deserialize(&mut buffer, Varcount::from(usize::MAX));
     }
 
     #[test]
@@ -93,7 +101,55 @@ mod tests {
         let mut buffer = [0u8; 100];
         check_serialize_deserialize(
             &mut buffer,
-            Varpair::from((Varlength::from(42usize), Varchar::from(""))),
+            Varpair::from((Varcount::from(42usize), Varchar::from(""))),
         );
+    }
+
+    #[test]
+    fn test_serialize_deserialize_fixed_length_integers() {
+        let mut buffer = [0u8; 100];
+        check_serialize_deserialize(&mut buffer, TinyInteger::from(0));
+        check_serialize_deserialize(&mut buffer, TinyInteger::from(i8::MIN));
+        check_serialize_deserialize(&mut buffer, TinyInteger::from(i8::MAX));
+
+        check_serialize_deserialize(&mut buffer, SmallInteger::from(0));
+        check_serialize_deserialize(&mut buffer, SmallInteger::from(i16::MIN));
+        check_serialize_deserialize(&mut buffer, SmallInteger::from(i16::MAX));
+
+        check_serialize_deserialize(&mut buffer, Integer::from(0));
+        check_serialize_deserialize(&mut buffer, Integer::from(i32::MIN));
+        check_serialize_deserialize(&mut buffer, Integer::from(i32::MAX));
+
+        check_serialize_deserialize(&mut buffer, BigInteger::from(0));
+        check_serialize_deserialize(&mut buffer, BigInteger::from(i64::MIN));
+        check_serialize_deserialize(&mut buffer, BigInteger::from(i64::MAX));
+
+        check_serialize_deserialize(&mut buffer, HugeInteger::from(0));
+        check_serialize_deserialize(&mut buffer, HugeInteger::from(i128::MIN));
+        check_serialize_deserialize(&mut buffer, HugeInteger::from(i128::MAX));
+    }
+
+    #[test]
+    fn test_serialize_deserialize_fixed_length_counts() {
+        let mut buffer = [0u8; 100];
+        check_serialize_deserialize(&mut buffer, TinyCount::from(0));
+        check_serialize_deserialize(&mut buffer, TinyCount::from(u8::MIN));
+        check_serialize_deserialize(&mut buffer, TinyCount::from(u8::MAX));
+
+        check_serialize_deserialize(&mut buffer, SmallCount::from(0));
+        check_serialize_deserialize(&mut buffer, SmallCount::from(u16::MIN));
+        check_serialize_deserialize(&mut buffer, SmallCount::from(u16::MAX));
+
+        check_serialize_deserialize(&mut buffer, Count::from(0));
+        check_serialize_deserialize(&mut buffer, Count::from(u32::MIN));
+        check_serialize_deserialize(&mut buffer, Count::from(u32::MAX));
+
+        check_serialize_deserialize(&mut buffer, BigCount::from(0));
+        check_serialize_deserialize(&mut buffer, BigCount::from(u64::MIN));
+        check_serialize_deserialize(&mut buffer, BigCount::from(u64::MAX));
+
+        check_serialize_deserialize(&mut buffer, HugeCount::from(0));
+        check_serialize_deserialize(&mut buffer, HugeCount::from(u128::MIN));
+        check_serialize_deserialize(&mut buffer, HugeCount::from(u128::MAX));
     }
 }

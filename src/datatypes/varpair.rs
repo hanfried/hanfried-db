@@ -10,6 +10,16 @@ where
     right: U,
 }
 
+impl<T, U> Varpair<T, U>
+where
+    T: HfdbSerializableDatatype,
+    U: HfdbSerializableDatatype,
+{
+    pub fn as_tuple(&self) -> (&T, &U) {
+        (&self.left, &self.right)
+    }
+}
+
 impl<T, U> HfdbSerializableDatatype for Varpair<T, U>
 where
     T: HfdbSerializableDatatype,
@@ -42,5 +52,15 @@ where
             left: value.0,
             right: value.1,
         }
+    }
+}
+
+impl<'a, T, U> From<&'a Varpair<T, U>> for (&'a T, &'a U)
+where
+    T: HfdbSerializableDatatype,
+    U: HfdbSerializableDatatype,
+{
+    fn from(value: &'a Varpair<T, U>) -> Self {
+        (&value.left, &value.right)
     }
 }

@@ -1,9 +1,9 @@
-use crate::datatypes::varlength::Varlength;
+use crate::datatypes::varcount::Varcount;
 use crate::datatypes::HfdbSerializableDatatype;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Varchar {
-    varlength: Varlength,
+    varlength: Varcount,
     data: String,
 }
 
@@ -19,7 +19,7 @@ impl HfdbSerializableDatatype for Varchar {
     }
 
     fn deserialize(buffer: &[u8]) -> Self {
-        let varlength = Varlength::deserialize(buffer);
+        let varlength = Varcount::deserialize(buffer);
         let offset_str = varlength.serialized_length();
         let data =
             String::from_utf8_lossy(&buffer[offset_str..offset_str + usize::from(&varlength)])
@@ -31,7 +31,7 @@ impl HfdbSerializableDatatype for Varchar {
 impl From<String> for Varchar {
     fn from(value: String) -> Self {
         Self {
-            varlength: Varlength::from(value.len()),
+            varlength: Varcount::from(value.len()),
             data: value,
         }
     }
@@ -40,7 +40,7 @@ impl From<String> for Varchar {
 impl From<&str> for Varchar {
     fn from(value: &str) -> Self {
         Self {
-            varlength: Varlength::from(value.len()),
+            varlength: Varcount::from(value.len()),
             data: value.to_string(),
         }
     }
